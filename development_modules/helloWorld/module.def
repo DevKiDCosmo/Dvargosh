@@ -1,0 +1,8 @@
+[module]
+name = helloworld
+version = 1.0.0
+description = Hello World
+author = I am Nam
+secured_memory_kb = 0
+link_libraries = dvargosh_core
+auto_load = true

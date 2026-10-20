@@ -3,12 +3,22 @@
 
 set(DVARGOSH_DEVELOPMENT_MODULES_TARGETS "")
 
-# Module: crypto_accelerator (Domains: accelerator:hash, accelerator:cipher, *)
-add_library(mod_crypto_accelerator SHARED development_modules/crypto_accelerator/accelerator_module.cpp development_modules/crypto_accelerator/hasher.cpp development_modules/crypto_accelerator/cipher.cpp)
+# Module: crypto_accelerator (Domains: accelerator:cipher, accelerator:hash, *)
+add_library(mod_crypto_accelerator SHARED /Users/duynamschlitz/GitProject/Dvargosh/build/development_modules/crypto_accelerator/_generated_registration.cpp /Users/duynamschlitz/GitProject/Dvargosh/build/development_modules/crypto_accelerator/accelerator_module.cpp /Users/duynamschlitz/GitProject/Dvargosh/build/development_modules/crypto_accelerator/cipher.cpp /Users/duynamschlitz/GitProject/Dvargosh/build/development_modules/crypto_accelerator/hasher.cpp)
 target_link_libraries(mod_crypto_accelerator PRIVATE dvargosh_core)
-target_include_directories(mod_crypto_accelerator PRIVATE include development_modules/crypto_accelerator)
+target_include_directories(mod_crypto_accelerator PRIVATE include /Users/duynamschlitz/GitProject/Dvargosh/build/development_modules/crypto_accelerator ${CMAKE_BINARY_DIR}/generated/include)
 set_target_properties(mod_crypto_accelerator PROPERTIES
     PREFIX "lib"
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/development_modules
 )
 list(APPEND DVARGOSH_DEVELOPMENT_MODULES_TARGETS mod_crypto_accelerator)
+
+# Module: helloWorld (Domains: module:*:hello_world, *)
+add_library(mod_helloWorld SHARED /Users/duynamschlitz/GitProject/Dvargosh/build/development_modules/helloWorld/_generated_registration.cpp /Users/duynamschlitz/GitProject/Dvargosh/build/development_modules/helloWorld/helloworld.services.cpp /Users/duynamschlitz/GitProject/Dvargosh/build/development_modules/helloWorld/helloworld_module.cpp)
+target_link_libraries(mod_helloWorld PRIVATE dvargosh_core)
+target_include_directories(mod_helloWorld PRIVATE include /Users/duynamschlitz/GitProject/Dvargosh/build/development_modules/helloWorld ${CMAKE_BINARY_DIR}/generated/include)
+set_target_properties(mod_helloWorld PROPERTIES
+    PREFIX "lib"
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/development_modules
+)
+list(APPEND DVARGOSH_DEVELOPMENT_MODULES_TARGETS mod_helloWorld)

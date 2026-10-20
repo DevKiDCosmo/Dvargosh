@@ -9,7 +9,6 @@
       "author": "Dvargosh Team",
       "secured_memory_kb": 4096,
       "domains": [
-        "demo_pkg:main",
         "demo_pkg:vault",
         "demo_pkg:worker",
         "*"
@@ -19,33 +18,25 @@
           "function": "demo_pkg_vault_hash",
           "domain": "demo_pkg:vault",
           "description": "Auto-registered SHA256 hashing function in vault subsystem",
-          "source_file": "ops_crypto.cpp"
+          "source_file": "ops_crypto.cpp",
+          "is_macro_export": true,
+          "ret_type": "dvargosh::Value",
+          "params": "const std::vector<dvargosh::Value>& args"
         },
         {
           "function": "demo_pkg_worker_power",
           "domain": "demo_pkg:worker",
           "description": "Auto-registered mathematical power function in worker subsystem",
-          "source_file": "ops_calc.cpp"
+          "source_file": "ops_calc.cpp",
+          "is_macro_export": true,
+          "ret_type": "dvargosh::Value",
+          "params": "const std::vector<dvargosh::Value>& args"
         }
       ],
       "sources": [
         "demo_module.cpp",
-        "ops_crypto.cpp",
-        "ops_calc.cpp"
-      ]
-    },
-    {
-      "name": "monitor",
-      "version": "1.0.0",
-      "description": "Live Telemetry, System Metrics, and Memory Occupation Monitor",
-      "author": "Dvargosh Team",
-      "secured_memory_kb": 2048,
-      "domains": [
-        "telemetry"
-      ],
-      "functions": [],
-      "sources": [
-        "monitor_module.cpp"
+        "ops_calc.cpp",
+        "ops_crypto.cpp"
       ]
     },
     {
@@ -55,7 +46,7 @@
       "author": "Dvargosh Team",
       "secured_memory_kb": 1024,
       "domains": [
-        "core"
+        "*"
       ],
       "functions": [],
       "sources": [
@@ -64,16 +55,30 @@
     },
     {
       "name": "math",
-      "version": "1.2.0",
+      "version": "1.0.0",
       "description": "Mathematical Computations with Arena Memory and Event Emission",
       "author": "Dvargosh Team",
       "secured_memory_kb": 2048,
       "domains": [
-        "compute"
+        "*"
       ],
       "functions": [],
       "sources": [
         "math_module.cpp"
+      ]
+    },
+    {
+      "name": "monitor",
+      "version": "1.0.0",
+      "description": "Live Telemetry, System Metrics, and Memory Occupation Monitor",
+      "author": "Dvargosh Team",
+      "secured_memory_kb": 2048,
+      "domains": [
+        "*"
+      ],
+      "functions": [],
+      "sources": [
+        "monitor_module.cpp"
       ]
     },
     {
@@ -83,7 +88,7 @@
       "author": "Dvargosh Team",
       "secured_memory_kb": 4096,
       "domains": [
-        "worker"
+        "*"
       ],
       "functions": [],
       "sources": [
@@ -97,28 +102,62 @@
       "author": "Dvargosh Dev Team",
       "secured_memory_kb": 2048,
       "domains": [
-        "accelerator:hash",
         "accelerator:cipher",
+        "accelerator:hash",
         "*"
       ],
       "functions": [
         {
           "function": "accelerator_sha256",
           "domain": "accelerator:hash",
-          "description": "Hardware-accelerated SHA256 simulation",
-          "source_file": "hasher.cpp"
+          "description": "Pipeline-attributed service method 'accelerator_sha256'",
+          "source_file": "hasher.cpp",
+          "ret_type": "std::string",
+          "params": "const std::string& input",
+          "is_macro_export": false
         },
         {
           "function": "accelerator_rot13",
           "domain": "accelerator:cipher",
-          "description": "Caesar/ROT13 transform",
-          "source_file": "cipher.cpp"
+          "description": "Pipeline-attributed service method 'accelerator_rot13'",
+          "source_file": "cipher.cpp",
+          "ret_type": "std::string",
+          "params": "const std::string& input",
+          "is_macro_export": false
         }
       ],
       "sources": [
+        "_generated_registration.cpp",
         "accelerator_module.cpp",
-        "hasher.cpp",
-        "cipher.cpp"
+        "cipher.cpp",
+        "hasher.cpp"
+      ]
+    },
+    {
+      "name": "helloWorld",
+      "version": "1.0.0",
+      "description": "Hello World",
+      "author": "I am Nam",
+      "secured_memory_kb": 0,
+      "domains": [
+        "module:*:hello_world",
+        "*"
+      ],
+      "functions": [
+        {
+          "function": "hello_world",
+          "domain": "module:*:hello_world",
+          "description": "Pipeline-attributed service method 'hello_world'",
+          "source_file": "helloworld.services.cpp",
+          "ret_type": "std::string",
+          "params": "const std::string& input",
+          "is_macro_export": false
+        }
+      ],
+      "sources": [
+        "_generated_registration.cpp",
+        "helloworld.services.cpp",
+        "helloworld_module.cpp"
       ]
     }
   ]

@@ -1,9 +1,12 @@
-.PHONY: all build test demo interactive clean docker-build docker-test docker-interactive generate-cmake sign-modules
+.PHONY: all build test demo interactive clean docker-build docker-test docker-interactive generate-cmake sign-modules pipeline full-pipeline
 
 BUILD_DIR ?= build
 MODULES_DIR ?= $(BUILD_DIR)/modules
 
 all: build test
+
+pipeline full-pipeline:
+	./pipeline_dvargosh/build_pipeline.sh
 
 generate-cmake:
 	python3 tools/dvargosh_tool.py generate-cmake

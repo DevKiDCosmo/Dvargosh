@@ -8,3 +8,4 @@ lib/
 .DS_Store
 .vscode/
 .idea/
+development_modules/DevModules.cmake

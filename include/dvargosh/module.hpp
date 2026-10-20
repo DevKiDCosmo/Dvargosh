@@ -113,6 +113,20 @@ using ModuleBuildIdFn = const char* (*)();
 
 } // namespace dvargosh
 
+// ============================================================================
+// ATTRIBUTION MARKERS FOR PIPELINE CODE GENERATION & RUNTIME DECOUPLING
+// ============================================================================
+// These markers allow developers to decorate clean native C++ functions.
+// During runtime C++ compilation, the preprocessor expands these to standard compiler
+// annotations or no-ops, effectively commenting out the marker for the compiler.
+// The pipeline scanner (pipeline_dvargosh) parses these markers to automatically
+// extract domains, generate DVARGOSH_EXPORT_FN registration wrappers, and create
+// strongly-typed C++ interface proxies for direct zero-overhead calling.
+#ifndef DVARGOSH_SERVICE
+#  define DVARGOSH_SERVICE(...) /* Dvargosh pipeline marker: commented out at runtime */
+#  define DVARGOSH_FN(...)      /* Dvargosh pipeline marker: commented out at runtime */
+#endif
+
 // Attribute-like automatic function export macro for non-monolithic source files
 // Usage in any .cpp file:
 // DVARGOSH_EXPORT_FN("math.square", "compute", "Squares a number") {
