@@ -68,5 +68,5 @@ TEST_CASE(test_module_lifecycle_and_scoped_cleanup) {
     // Verify registered method was cleaned up
     auto post_res = di->registry()->invoke("mock.ping");
     ASSERT_FALSE(post_res.is_ok());
-    ASSERT_EQ(post_res.status(), StatusCode::NotFound);
+    ASSERT_EQ(post_res.status(), StatusCode::SymbolNotFound);
 }

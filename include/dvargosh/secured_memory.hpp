@@ -63,12 +63,20 @@ private:
     mutable std::mutex m_mutex;
 };
 
-// Top-level factory function as requested by the user:
-// "Add also a function to init a secured memory space for like own containirization for modules"
+// Top-level factory functions as requested by the user:
+// "The functions to init own memory space is needed still."
 Result<std::unique_ptr<SecuredMemorySpace>> init_secured_memory_space(
     const std::string& module_name,
     size_t capacity_bytes = 4 * 1024 * 1024,
     bool enable_guard_pages = true
+);
+
+Result<std::unique_ptr<SecuredMemorySpace>> init_own_memory_space(
+    const std::string& name,
+    size_t capacity_bytes = 4 * 1024 * 1024,
+    bool enable_guard_pages = true,
+    bool lock_in_ram = false,
+    bool scrub_on_destroy = true
 );
 
 } // namespace dvargosh

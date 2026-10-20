@@ -5,6 +5,6 @@ description = Full Demo Package with Subsystems (Domains) and Inter-Subsystem Ac
 author = Dvargosh Team
 secured_memory_kb = 4096
 domains = demo_pkg:main, demo_pkg:vault, demo_pkg:worker, *
-sources = demo_module.cpp
+sources = demo_module.cpp, ops_crypto.cpp, ops_calc.cpp
 link_libraries = dvargosh_core
 auto_load = true

@@ -16,6 +16,11 @@ class DomainManager;
 class SecuredMemorySpace;
 
 using DynamicMethodFn = std::function<Result<Value>(const std::vector<Value>& args)>;
+using UnresolvedHandler = std::function<Result<Value>(
+    const std::string& method_name,
+    const std::vector<Value>& args,
+    const std::string& caller_domain
+)>;
 
 struct ServiceDescriptor {
     std::string name;
@@ -56,6 +61,12 @@ public:
     void set_domain_manager(DomainManager* dm) { m_domain_mgr = dm; }
     DomainManager* domain_manager() const noexcept { return m_domain_mgr; }
 
+    // Fallback handler for unresolved functions / services
+    void set_unresolved_handler(UnresolvedHandler handler) {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_unresolved_handler = std::move(handler);
+    }
+
     // Register a typed service interface with domain
     template<typename Interface>
     Result<void> register_service(
@@ -75,6 +86,11 @@ public:
             return Result<void>::failure(StatusCode::NullPointer, "Service implementation cannot be null");
         }
 
+        std::string scoped_domain = domain;
+        if (scoped_domain == "*") {
+            scoped_domain = provider_module + ".*";
+        }
+
         std::lock_guard<std::mutex> lock(m_mutex);
         if (m_services.find(service_name) != m_services.end()) {
             return Result<void>::failure(StatusCode::AlreadyExists, "Service '" + service_name + "' already registered");
@@ -86,7 +102,7 @@ public:
                 service_name,
                 version,
                 provider_module,
-                domain,
+                scoped_domain,
                 std::type_index(typeid(Interface)),
                 std::static_pointer_cast<void>(service_impl)
             )
@@ -166,15 +182,19 @@ public:
     // Bulk cleanup for a module on hot-unplug
     size_t unregister_provider(const std::string& provider_module);
 
+    std::vector<std::string> list_methods() const;
+    std::vector<std::string> list_services() const;
     size_t service_count() const;
     size_t method_count() const;
     void dump_report() const;
 
 private:
     bool check_domain_access(const std::string& from_domain, const std::string& to_domain) const;
+    std::string find_similar_method(const std::string& target) const;
 
     mutable std::mutex m_mutex;
     DomainManager* m_domain_mgr = nullptr;
+    UnresolvedHandler m_unresolved_handler = nullptr;
     std::unordered_map<std::string, ServiceDescriptor> m_services;
     std::unordered_map<std::string, MethodDescriptor> m_methods;
 };

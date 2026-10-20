@@ -1,0 +1,10 @@
+[module]
+name = crypto_accelerator
+version = 1.0.0
+description = Experimental Cryptographic Accelerator Module with Non-Monolithic Auto-Registered Functions
+author = Dvargosh Dev Team
+secured_memory_kb = 2048
+domains = accelerator:hash, accelerator:cipher, *
+sources = accelerator_module.cpp, hasher.cpp, cipher.cpp
+link_libraries = dvargosh_core
+auto_load = true

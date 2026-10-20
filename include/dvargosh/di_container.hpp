@@ -48,6 +48,15 @@ public:
     TrackedAllocator* allocator() noexcept { return m_tracked_allocator.get(); }
     ArenaAllocator* arena() noexcept { return m_arena.get(); }
 
+    // Init custom/own secured memory space inside module
+    Result<std::unique_ptr<SecuredMemorySpace>> init_own_memory_space(
+        const std::string& name,
+        size_t capacity_bytes,
+        bool use_guard_pages = true
+    ) {
+        return init_secured_memory_space(m_module_name + "_" + name, capacity_bytes, use_guard_pages);
+    }
+
     // Shared subsystems
     Registry* registry() noexcept { return m_registry.get(); }
     ResourceManager* resources() noexcept { return m_resource_mgr.get(); }

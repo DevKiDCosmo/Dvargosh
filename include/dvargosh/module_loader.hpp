@@ -30,10 +30,24 @@ struct LoadedModule {
     bool is_dynamic = true;
 };
 
+struct DiscoveredModuleInfo {
+    std::string name;
+    std::string filename;
+    std::string full_path;
+    std::string build_id;
+    std::string abi_version;
+    bool is_valid = false;
+};
+
 class ModuleLoader {
 public:
     explicit ModuleLoader(std::shared_ptr<DIContainer> di, ModuleLoaderConfig config = {});
     ~ModuleLoader();
+
+    // Universal Recognition & Auto-Discovery
+    // Scans all search paths for libraries exporting Dvargosh magic header, name, and build_id
+    std::vector<DiscoveredModuleInfo> discover_all_modules();
+    const DiscoveredModuleInfo* get_discovered_info(const std::string& name_or_filename) const;
 
     // Load from dynamic library (.dylib / .so)
     Result<void> load_from_file(
@@ -42,10 +56,10 @@ public:
         const SecurityPolicy* custom_policy = nullptr
     );
 
-    // Load module by name with signature: searches configured search paths
-    // Usage: loader.load("math", "signature_hex")
+    // Load module by name OR filename with signature: searches configured search paths
+    // Usage: loader.load("math", "signature_hex") OR loader.load("libmod_math.dylib", "signature_hex")
     Result<void> load(
-        const std::string& module_name,
+        const std::string& name_or_filename,
         const std::string& signature,
         const SecurityPolicy* custom_policy = nullptr
     );
@@ -53,7 +67,7 @@ public:
     // Search paths management
     void add_search_path(const std::string& path);
     const std::vector<std::string>& search_paths() const noexcept { return m_search_paths; }
-    Result<std::string> find_module_file(const std::string& module_name) const;
+    Result<std::string> find_module_file(const std::string& name_or_filename) const;
 
     // Register & load a static / in-memory module
     Result<void> load_static_module(
@@ -82,6 +96,8 @@ private:
     std::shared_ptr<DIContainer> m_di;
     ModuleLoaderConfig m_config;
     std::vector<std::string> m_search_paths;
+    std::unordered_map<std::string, DiscoveredModuleInfo> m_discovered_by_name;
+    std::unordered_map<std::string, DiscoveredModuleInfo> m_discovered_by_filename;
     mutable std::mutex m_mutex;
     std::unordered_map<std::string, LoadedModule> m_loaded_modules;
 };

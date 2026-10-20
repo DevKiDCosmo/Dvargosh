@@ -1,0 +1,125 @@
+{
+  "framework": "Dvargosh Runtime Engine",
+  "version": "1.0.0",
+  "modules": [
+    {
+      "name": "demo_pkg",
+      "version": "1.0.0",
+      "description": "Full Demo Package with Subsystems (Domains) and Inter-Subsystem Access Control",
+      "author": "Dvargosh Team",
+      "secured_memory_kb": 4096,
+      "domains": [
+        "demo_pkg:main",
+        "demo_pkg:vault",
+        "demo_pkg:worker",
+        "*"
+      ],
+      "functions": [
+        {
+          "function": "demo_pkg_vault_hash",
+          "domain": "demo_pkg:vault",
+          "description": "Auto-registered SHA256 hashing function in vault subsystem",
+          "source_file": "ops_crypto.cpp"
+        },
+        {
+          "function": "demo_pkg_worker_power",
+          "domain": "demo_pkg:worker",
+          "description": "Auto-registered mathematical power function in worker subsystem",
+          "source_file": "ops_calc.cpp"
+        }
+      ],
+      "sources": [
+        "demo_module.cpp",
+        "ops_crypto.cpp",
+        "ops_calc.cpp"
+      ]
+    },
+    {
+      "name": "monitor",
+      "version": "1.0.0",
+      "description": "Live Telemetry, System Metrics, and Memory Occupation Monitor",
+      "author": "Dvargosh Team",
+      "secured_memory_kb": 2048,
+      "domains": [
+        "telemetry"
+      ],
+      "functions": [],
+      "sources": [
+        "monitor_module.cpp"
+      ]
+    },
+    {
+      "name": "logger",
+      "version": "1.0.0",
+      "description": "Plug-and-play Console Logging Service",
+      "author": "Dvargosh Team",
+      "secured_memory_kb": 1024,
+      "domains": [
+        "core"
+      ],
+      "functions": [],
+      "sources": [
+        "logger_module.cpp"
+      ]
+    },
+    {
+      "name": "math",
+      "version": "1.2.0",
+      "description": "Mathematical Computations with Arena Memory and Event Emission",
+      "author": "Dvargosh Team",
+      "secured_memory_kb": 2048,
+      "domains": [
+        "compute"
+      ],
+      "functions": [],
+      "sources": [
+        "math_module.cpp"
+      ]
+    },
+    {
+      "name": "worker",
+      "version": "1.0.0",
+      "description": "Isolated Secure Worker Module with Containerized Memory and Event Hooks",
+      "author": "Dvargosh Team",
+      "secured_memory_kb": 4096,
+      "domains": [
+        "worker"
+      ],
+      "functions": [],
+      "sources": [
+        "worker_module.cpp"
+      ]
+    },
+    {
+      "name": "crypto_accelerator",
+      "version": "1.0.0",
+      "description": "Experimental Cryptographic Accelerator Module with Non-Monolithic Auto-Registered Functions",
+      "author": "Dvargosh Dev Team",
+      "secured_memory_kb": 2048,
+      "domains": [
+        "accelerator:hash",
+        "accelerator:cipher",
+        "*"
+      ],
+      "functions": [
+        {
+          "function": "accelerator_sha256",
+          "domain": "accelerator:hash",
+          "description": "Hardware-accelerated SHA256 simulation",
+          "source_file": "hasher.cpp"
+        },
+        {
+          "function": "accelerator_rot13",
+          "domain": "accelerator:cipher",
+          "description": "Caesar/ROT13 transform",
+          "source_file": "cipher.cpp"
+        }
+      ],
+      "sources": [
+        "accelerator_module.cpp",
+        "hasher.cpp",
+        "cipher.cpp"
+      ]
+    }
+  ]
+}

@@ -224,4 +224,25 @@ Result<std::unique_ptr<SecuredMemorySpace>> init_secured_memory_space(
     return SecuredMemorySpace::create(cfg, policy);
 }
 
+Result<std::unique_ptr<SecuredMemorySpace>> init_own_memory_space(
+    const std::string& name,
+    size_t capacity_bytes,
+    bool enable_guard_pages,
+    bool lock_in_ram,
+    bool scrub_on_destroy
+) {
+    SecuredMemoryConfig cfg;
+    cfg.container_name = name;
+    cfg.capacity_bytes = capacity_bytes;
+    cfg.use_guard_pages = enable_guard_pages;
+    cfg.lock_in_ram = lock_in_ram;
+    cfg.scrub_on_destroy = scrub_on_destroy;
+
+    SecurityPolicy policy = SecurityPolicy::standard();
+    policy.set_max_memory_bytes(capacity_bytes * 2);
+    policy.permissions().grant(Permission::SecuredMemory);
+
+    return SecuredMemorySpace::create(cfg, policy);
+}
+
 } // namespace dvargosh

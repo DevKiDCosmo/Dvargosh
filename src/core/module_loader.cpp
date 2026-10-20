@@ -1,6 +1,7 @@
 #include "dvargosh/module_loader.hpp"
 #include <dlfcn.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <iostream>
 
 namespace dvargosh {
@@ -17,7 +18,92 @@ void ModuleLoader::add_search_path(const std::string& path) {
     m_search_paths.push_back(path);
 }
 
-Result<std::string> ModuleLoader::find_module_file(const std::string& module_name) const {
+std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<DiscoveredModuleInfo> result;
+
+#if defined(__APPLE__)
+    const std::string ext = ".dylib";
+#else
+    const std::string ext = ".so";
+#endif
+
+    for (const auto& dir_path : m_search_paths) {
+        DIR* dir = opendir(dir_path.c_str());
+        if (!dir) continue;
+
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            std::string filename = entry->d_name;
+            if (filename.size() <= ext.size()) continue;
+            if (filename.compare(filename.size() - ext.size(), ext.size(), ext) != 0) continue;
+
+            std::string full_path = dir_path + "/" + filename;
+
+            // Inspect dynamic library header symbols without executing module code
+            void* handle = dlopen(full_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
+            if (!handle) continue;
+
+            auto magic_fn = reinterpret_cast<ModuleMagicFn>(dlsym(handle, "dvargosh_module_magic"));
+            if (!magic_fn || std::string(magic_fn()) != DVARGOSH_MODULE_MAGIC) {
+                dlclose(handle);
+                continue;
+            }
+
+            auto name_fn = reinterpret_cast<ModuleNameFn>(dlsym(handle, "dvargosh_module_name"));
+            auto build_fn = reinterpret_cast<ModuleBuildIdFn>(dlsym(handle, "dvargosh_build_id"));
+            auto abi_fn = reinterpret_cast<ModuleAbiFn>(dlsym(handle, "dvargosh_abi_version"));
+
+            DiscoveredModuleInfo info;
+            info.filename = filename;
+            info.full_path = full_path;
+            info.name = name_fn ? name_fn() : filename;
+            info.build_id = build_fn ? build_fn() : "unknown";
+            info.abi_version = abi_fn ? abi_fn() : "unknown";
+            info.is_valid = true;
+
+            dlclose(handle);
+
+            m_discovered_by_name[info.name] = info;
+            m_discovered_by_filename[info.filename] = info;
+            result.push_back(info);
+        }
+        closedir(dir);
+    }
+
+    return result;
+}
+
+const DiscoveredModuleInfo* ModuleLoader::get_discovered_info(const std::string& name_or_filename) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it_name = m_discovered_by_name.find(name_or_filename);
+    if (it_name != m_discovered_by_name.end()) return &it_name->second;
+
+    auto it_file = m_discovered_by_filename.find(name_or_filename);
+    if (it_file != m_discovered_by_filename.end()) return &it_file->second;
+
+    return nullptr;
+}
+
+Result<std::string> ModuleLoader::find_module_file(const std::string& name_or_filename) const {
+    // 1. Direct path check
+    if (access(name_or_filename.c_str(), F_OK) == 0) {
+        return Result<std::string>::success(name_or_filename);
+    }
+
+    // 2. Check cached discovered modules
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto it = m_discovered_by_name.find(name_or_filename);
+        if (it != m_discovered_by_name.end()) {
+            return Result<std::string>::success(it->second.full_path);
+        }
+        auto it_f = m_discovered_by_filename.find(name_or_filename);
+        if (it_f != m_discovered_by_filename.end()) {
+            return Result<std::string>::success(it_f->second.full_path);
+        }
+    }
+
 #if defined(__APPLE__)
     const char* ext = ".dylib";
 #else
@@ -25,9 +111,10 @@ Result<std::string> ModuleLoader::find_module_file(const std::string& module_nam
 #endif
 
     std::vector<std::string> patterns = {
-        "libmod_" + module_name + ext,
-        "lib" + module_name + ext,
-        module_name + ext
+        name_or_filename,
+        "libmod_" + name_or_filename + ext,
+        "lib" + name_or_filename + ext,
+        name_or_filename + ext
     };
 
     for (const auto& dir : m_search_paths) {
@@ -41,18 +128,23 @@ Result<std::string> ModuleLoader::find_module_file(const std::string& module_nam
 
     return Result<std::string>::failure(
         StatusCode::NotFound,
-        "Module '" + module_name + "' not found in search paths"
+        "Module '" + name_or_filename + "' not found in search paths"
     );
 }
 
 Result<void> ModuleLoader::load(
-    const std::string& module_name,
+    const std::string& name_or_filename,
     const std::string& signature,
     const SecurityPolicy* custom_policy
 ) {
-    auto file_res = find_module_file(module_name);
+    auto file_res = find_module_file(name_or_filename);
     if (!file_res.is_ok()) {
-        return Result<void>::failure(file_res.status(), file_res.error_message());
+        // Run auto-discovery if first search missed
+        discover_all_modules();
+        file_res = find_module_file(name_or_filename);
+        if (!file_res.is_ok()) {
+            return Result<void>::failure(file_res.status(), file_res.error_message());
+        }
     }
 
     return load_from_file(file_res.value(), signature, custom_policy);

@@ -180,6 +180,9 @@ public:
             }
         );
 
+        // F) Automatically register functions declared across non-monolithic source files
+        register_auto_functions(ctx);
+
         return Result<void>::success();
     }
 

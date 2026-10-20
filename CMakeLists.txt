@@ -46,15 +46,28 @@ target_include_directories(dvargosh_core PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-# Include Auto-generated Module Targets (from modules/Modules.cmake)
+# Include Auto-generated Module Targets
 include(modules/Modules.cmake)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/development_modules/DevModules.cmake")
+    include(development_modules/DevModules.cmake)
+endif()
+
+set(ALL_MODULES_LIST ${DVARGOSH_ALL_MODULE_TARGETS} ${DVARGOSH_DEVELOPMENT_MODULES_TARGETS})
 
 # Main Executable / Demo CLI
 add_executable(dvargosh src/main.cpp)
 target_link_libraries(dvargosh PRIVATE dvargosh_core)
 target_include_directories(dvargosh PRIVATE include)
-if(DVARGOSH_ALL_MODULE_TARGETS)
-    add_dependencies(dvargosh ${DVARGOSH_ALL_MODULE_TARGETS})
+if(ALL_MODULES_LIST)
+    add_dependencies(dvargosh ${ALL_MODULES_LIST})
+endif()
+
+# Standalone App Test (load('name', 'signature'))
+add_executable(dvargosh_app_loader_test src/app/loader.test.cpp)
+target_link_libraries(dvargosh_app_loader_test PRIVATE dvargosh_core)
+target_include_directories(dvargosh_app_loader_test PRIVATE include)
+if(ALL_MODULES_LIST)
+    add_dependencies(dvargosh_app_loader_test ${ALL_MODULES_LIST})
 endif()
 
 # Test Suite
@@ -82,9 +95,10 @@ set(MODULE_TEST_SOURCES
 add_executable(dvargosh_tests ${CORE_TEST_SOURCES} ${MODULE_TEST_SOURCES})
 target_link_libraries(dvargosh_tests PRIVATE dvargosh_core)
 target_include_directories(dvargosh_tests PRIVATE include tests modules)
-if(DVARGOSH_ALL_MODULE_TARGETS)
-    add_dependencies(dvargosh_tests ${DVARGOSH_ALL_MODULE_TARGETS})
+if(ALL_MODULES_LIST)
+    add_dependencies(dvargosh_tests ${ALL_MODULES_LIST})
 endif()
 
-add_test(NAME UnitTests COMMAND dvargosh_tests)
-add_test(NAME IntegrationDemo COMMAND dvargosh --modules ${CMAKE_BINARY_DIR}/modules)
+add_test(NAME UnitTests COMMAND $<TARGET_FILE:dvargosh_tests>)
+add_test(NAME AppLoaderTest COMMAND $<TARGET_FILE:dvargosh_app_loader_test>)
+add_test(NAME IntegrationDemo COMMAND $<TARGET_FILE:dvargosh> --modules ${CMAKE_BINARY_DIR}/modules)

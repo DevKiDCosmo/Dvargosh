@@ -1,15 +1,55 @@
 #include "dvargosh/registry.hpp"
 #include "dvargosh/domain.hpp"
 #include <iostream>
+#include <algorithm>
 
 namespace dvargosh {
+
+namespace {
+
+// Levenshtein distance for "Did you mean?" suggestions
+size_t levenshtein_distance(const std::string& s1, const std::string& s2) {
+    const size_t m = s1.size();
+    const size_t n = s2.size();
+    std::vector<std::vector<size_t>> dp(m + 1, std::vector<size_t>(n + 1));
+
+    for (size_t i = 0; i <= m; ++i) dp[i][0] = i;
+    for (size_t j = 0; j <= n; ++j) dp[0][j] = j;
+
+    for (size_t i = 1; i <= m; ++i) {
+        for (size_t j = 1; j <= n; ++j) {
+            if (s1[i - 1] == s2[j - 1]) {
+                dp[i][j] = dp[i - 1][j - 1];
+            } else {
+                dp[i][j] = 1 + std::min({dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]});
+            }
+        }
+    }
+    return dp[m][n];
+}
+
+} // anonymous namespace
 
 Registry::Registry() = default;
 Registry::~Registry() = default;
 
 bool Registry::check_domain_access(const std::string& from_domain, const std::string& to_domain) const {
-    if (!m_domain_mgr || from_domain.empty() || to_domain.empty()) return true;
+    if (!m_domain_mgr || from_domain.empty() || to_domain.empty() || from_domain == "system") return true;
     return m_domain_mgr->check_cross_domain_access(from_domain, to_domain);
+}
+
+std::string Registry::find_similar_method(const std::string& target) const {
+    std::string best_match;
+    size_t min_dist = 4; // Max threshold for suggestion
+
+    for (const auto& [name, _] : m_methods) {
+        size_t dist = levenshtein_distance(target, name);
+        if (dist < min_dist) {
+            min_dist = dist;
+            best_match = name;
+        }
+    }
+    return best_match;
 }
 
 Result<void> Registry::unregister_service(const std::string& service_name) {
@@ -53,6 +93,11 @@ Result<void> Registry::register_method(
         return Result<void>::failure(StatusCode::NullPointer, "Method function cannot be null");
     }
 
+    std::string scoped_domain = domain;
+    if (scoped_domain == "*") {
+        scoped_domain = provider_module + ".*";
+    }
+
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_methods.find(method_name) != m_methods.end()) {
         return Result<void>::failure(StatusCode::AlreadyExists, "Method '" + method_name + "' already registered");
@@ -62,7 +107,7 @@ Result<void> Registry::register_method(
     desc.name = method_name;
     desc.description = description;
     desc.provider_module = provider_module;
-    desc.domain = domain.empty() ? "default" : domain;
+    desc.domain = scoped_domain.empty() ? "default" : scoped_domain;
     desc.fn = std::move(fn);
 
     m_methods[method_name] = std::move(desc);
@@ -95,14 +140,41 @@ Result<Value> Registry::invoke(
 
     DynamicMethodFn fn;
     std::string target_domain;
+    bool found = false;
+
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_methods.find(method_name);
-        if (it == m_methods.end()) {
-            return Result<Value>::failure(StatusCode::NotFound, "Method '" + method_name + "' not found in registry");
+        if (it != m_methods.end()) {
+            fn = it->second.fn;
+            target_domain = it->second.domain;
+            found = true;
         }
-        fn = it->second.fn;
-        target_domain = it->second.domain;
+    }
+
+    // Handle Unresolved Method
+    if (!found) {
+        UnresolvedHandler handler = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            handler = m_unresolved_handler;
+        }
+
+        if (handler) {
+            return handler(method_name, args, caller_domain);
+        }
+
+        std::string suggestion;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            suggestion = find_similar_method(method_name);
+        }
+
+        std::string err = "Method '" + method_name + "' not found in registry.";
+        if (!suggestion.empty()) {
+            err += " Did you mean '" + suggestion + "'?";
+        }
+        return Result<Value>::failure(StatusCode::SymbolNotFound, err);
     }
 
     // Check Cross-Domain Access Permission
@@ -151,6 +223,26 @@ size_t Registry::unregister_provider(const std::string& provider_module) {
     }
 
     return count;
+}
+
+std::vector<std::string> Registry::list_methods() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::string> names;
+    names.reserve(m_methods.size());
+    for (const auto& [name, _] : m_methods) {
+        names.push_back(name);
+    }
+    return names;
+}
+
+std::vector<std::string> Registry::list_services() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::string> names;
+    names.reserve(m_services.size());
+    for (const auto& [name, _] : m_services) {
+        names.push_back(name);
+    }
+    return names;
 }
 
 size_t Registry::service_count() const {
