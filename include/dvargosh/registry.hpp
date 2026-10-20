@@ -170,6 +170,8 @@ public:
     }
 
     Result<void> unregister_method(const std::string& method_name);
+    bool has_method(const std::string& method_name) const;
+    std::string get_method_domain(const std::string& method_name) const;
 
     Result<Value> invoke(
         const std::string& method_name,

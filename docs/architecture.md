@@ -90,16 +90,3 @@ Callers without compile-time headers use dynamic RPC. If a method is misspelled,
 ctx.registry()->invoke("demo_pkg_worker_pow", {2.0, 8.0});
 // Error: Method 'demo_pkg_worker_pow' not found. Did you mean 'demo_pkg_worker_power'?
 ```
-
----
-
-## 5. Dvargosh Toolchain Pipeline Automation
-
-The pipeline automates the full lifecycle:
-- Scans `modules/` and `development_modules/`
-- Stages development modules into `build/development_modules`
-- Auto-generates missing `module.def`, CMake snippets (`Modules.cmake`, `DevModules.cmake`)
-- Generates strongly-typed proxy headers in `build/generated/include/`
-- Generates a standalone pipeline verification application
-- Cryptographically signs all built modules
-- Executes the CTest test suite and verification harnesses

@@ -419,6 +419,98 @@ const LoadedModule* ModuleLoader::get_module_info(const std::string& module_name
     return nullptr;
 }
 
+Result<size_t> ModuleLoader::auto_load_all(const std::string& secret_key) {
+    auto discovered = discover_all_modules();
+    std::string key = secret_key.empty() ? m_config.secret_signing_key : secret_key;
+    size_t loaded_count = 0;
+
+    for (const auto& info : discovered) {
+        if (is_loaded(info.name)) continue;
+
+        std::string sig;
+        if (!key.empty()) {
+            auto sig_res = Crypto::sign_file(key, info.full_path);
+            if (sig_res.is_ok()) sig = sig_res.value();
+        }
+
+        auto load_res = load(info.name, sig);
+        if (load_res.is_ok()) {
+            loaded_count++;
+        }
+    }
+    return Result<size_t>::success(loaded_count);
+}
+
+Result<size_t> ModuleLoader::auto_load_matching(const std::string& pattern, const std::string& secret_key) {
+    auto discovered = discover_all_modules();
+    std::string key = secret_key.empty() ? m_config.secret_signing_key : secret_key;
+    size_t loaded_count = 0;
+
+    auto matches = [](const std::string& str, const std::string& pat) {
+        if (pat == "*" || pat.empty()) return true;
+        if (pat.front() == '*' && pat.back() == '*') {
+            std::string sub = pat.substr(1, pat.size() - 2);
+            return str.find(sub) != std::string::npos;
+        }
+        if (pat.back() == '*') {
+            std::string prefix = pat.substr(0, pat.size() - 1);
+            return str.rfind(prefix, 0) == 0;
+        }
+        if (pat.front() == '*') {
+            std::string suffix = pat.substr(1);
+            if (str.size() >= suffix.size()) {
+                return str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
+            }
+            return false;
+        }
+        return str == pat;
+    };
+
+    for (const auto& info : discovered) {
+        if (!matches(info.name, pattern) && !matches(info.filename, pattern)) {
+            continue;
+        }
+        if (is_loaded(info.name)) continue;
+
+        std::string sig;
+        if (!key.empty()) {
+            auto sig_res = Crypto::sign_file(key, info.full_path);
+            if (sig_res.is_ok()) sig = sig_res.value();
+        }
+
+        auto load_res = load(info.name, sig);
+        if (load_res.is_ok()) {
+            loaded_count++;
+        }
+    }
+    return Result<size_t>::success(loaded_count);
+}
+
+Result<void> ModuleLoader::auto_load_domain(const std::string& domain_name, const std::string& secret_key) {
+    auto discovered = discover_all_modules();
+    std::string key = secret_key.empty() ? m_config.secret_signing_key : secret_key;
+
+    std::string candidate_mod = domain_name;
+    auto colon_pos = domain_name.find(':');
+    if (colon_pos != std::string::npos) {
+        candidate_mod = domain_name.substr(0, colon_pos);
+    }
+
+    for (const auto& info : discovered) {
+        if (info.name == candidate_mod || info.name.find(candidate_mod) != std::string::npos) {
+            if (is_loaded(info.name)) return Result<void>::success();
+
+            std::string sig;
+            if (!key.empty()) {
+                auto sig_res = Crypto::sign_file(key, info.full_path);
+                if (sig_res.is_ok()) sig = sig_res.value();
+            }
+            return load(info.name, sig);
+        }
+    }
+    return Result<void>::failure(StatusCode::NotFound, "No discovered module provides domain '" + domain_name + "'");
+}
+
 void ModuleLoader::dump_report() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::cout << "=== [Dvargosh Loaded Modules: " << m_loaded_modules.size() << "] ===\n";

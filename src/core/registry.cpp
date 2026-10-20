@@ -124,6 +124,17 @@ Result<void> Registry::unregister_method(const std::string& method_name) {
     return Result<void>::success();
 }
 
+bool Registry::has_method(const std::string& method_name) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_methods.find(method_name) != m_methods.end();
+}
+
+std::string Registry::get_method_domain(const std::string& method_name) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_methods.find(method_name);
+    return it != m_methods.end() ? it->second.domain : "";
+}
+
 Result<Value> Registry::invoke(
     const std::string& method_name,
     const std::vector<Value>& args,

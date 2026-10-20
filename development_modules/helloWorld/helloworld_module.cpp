@@ -1,4 +1,5 @@
 #include "dvargosh/dvargosh.hpp"
+#include <iostream>
 
 namespace dvargosh {
 
@@ -19,14 +20,22 @@ public:
     }
 
     Result<void> on_load(ModuleContext& ctx) override {
-        // Automatically registers functions declared in hasher.cpp and cipher.cpp
         register_auto_functions(ctx);
         return Result<void>::success();
     }
 
     Result<void> on_start(ModuleContext&) override { return Result<void>::success(); }
-    Result<void> on_stop(ModuleContext&) override { return Result<void>::success(); }
-    Result<void> on_unload(ModuleContext&) override { return Result<void>::success(); }
+    Result<void> on_stop(ModuleContext&) override { 
+        // std::cout << "YOU DESTROYED THE MODULE, YOU DAEMON!" << std::endl;
+        // // Reform to invoke more easily through a global container
+        // auto di = std::make_shared<DIContainer>();
+        // auto mem_res = di->registry()->invoke("logger.log", {Value("YOU DESTROYED THE MODULE, YOU DAEMON!")});
+        return Result<void>::success(); 
+    }
+    Result<void> on_unload(ModuleContext&) override { 
+        // std::cout << "YOU KILLED THE MODULE, YOU DAEMON!" << std::endl;
+        return Result<void>::success();
+    }
 };
 
 } // namespace dvargosh

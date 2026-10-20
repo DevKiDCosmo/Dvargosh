@@ -1,0 +1,10 @@
+[module]
+name = telecom
+version = 1.0.0
+description = Telecom Packet Routing Module
+author = Dvargosh CI
+secured_memory_kb = 2048
+domains = telecom:packet, *
+sources = telecom_module.cpp, telecom.services.cpp
+link_libraries = dvargosh_core
+auto_load = true

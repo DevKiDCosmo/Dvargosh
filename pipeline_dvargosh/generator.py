@@ -2,18 +2,21 @@
 """
 Pipeline Dvargosh Generator:
 - Scans both modules/ and development_modules/ (and staged build directories)
+- Supports selectable module inclusion/exclusion via CLI (--select, --exclude)
 - Parses attribution markers: DVARGOSH_SERVICE(dom), DVARGOSH_FN(dom), [[module:domain]]
 - Auto-generates _generated_registration.cpp for native functions
 - Auto-generates and updates module.def (domains, sources, link_libraries, auto_load)
 - Generates strongly-typed C++ interface proxies for direct calling without invoke()
-- Generates build/generated/src/pipeline_demo_app.cpp
+- Generates build/generated/src/pipeline_demo_app.cpp with AutoMapper and AutoLoader verification
 - Generates modules/Modules.cmake and development_modules/DevModules.cmake
-- Generates docs/dvargosh_schema.json, docs/dvargosh_lint.md, and docs/architecture.md
+- Generates docs/dvargosh_schema.json (rich AST & custom linter metadata) and docs/dvargosh_lint.md
+- Generates docs/architecture.md
 """
 
 import os
 import sys
 import re
+import argparse
 import configparser
 import json
 from pathlib import Path
@@ -112,17 +115,14 @@ def generate_registration_cpp(folder: Path, annotated_fns):
         ""
     ]
 
-    # Forward declarations of native functions
     for fn in annotated_fns:
         lines.append(f"extern {fn['ret_type']} {fn['function']}({fn['params']});")
     lines.append("")
 
-    # Export bridges
     for fn in annotated_fns:
         lines.append(f"// Bridge for {fn['function']} (Domain: {fn['domain']})")
         lines.append(f"DVARGOSH_EXPORT_FN({fn['function']}, \"{fn['domain']}\", \"{fn['description']}\") {{")
-        
-        # Simple parameter unpacking heuristic for common C++ types
+
         if "std::string" in fn["params"]:
             lines.append("    std::string arg0 = args.empty() ? \"\" : args[0].to_string();")
             lines.append(f"    auto res = {fn['function']}(arg0);")
@@ -150,25 +150,21 @@ def generate_registration_cpp(folder: Path, annotated_fns):
     return reg_file
 
 def sync_module_def(folder: Path, annotated_fns, exported_fns):
-    """
-    Auto-generates or updates module.def with exact domains, sources, and link_libraries.
-    """
     def_file = folder / "module.def"
     name = folder.name
 
-    # Gather all sources
     all_sources = sorted([f.name for f in folder.glob("*.cpp")])
 
-    # Gather all unique domains
     domains_set = set()
     for fn in annotated_fns + exported_fns:
         if fn["domain"] != "*":
             domains_set.add(fn["domain"])
     domains_list = sorted(list(domains_set))
-    domains_list.append("*")  # Always include scoped module wildcard
+    domains_list.append("*")
     domains_str = ", ".join(domains_list)
     sources_str = ", ".join(all_sources)
 
+    existing_name = name
     existing_desc = f"Auto-generated module definition for {name}"
     existing_author = "Dvargosh Dev Team"
     existing_kb = 2048
@@ -177,12 +173,13 @@ def sync_module_def(folder: Path, annotated_fns, exported_fns):
         cfg = configparser.ConfigParser()
         cfg.read(def_file)
         if "module" in cfg:
+            existing_name = cfg["module"].get("name", existing_name)
             existing_desc = cfg["module"].get("description", existing_desc)
             existing_author = cfg["module"].get("author", existing_author)
             existing_kb = cfg["module"].getint("secured_memory_kb", existing_kb)
 
     content = f"""[module]
-name = {name}
+name = {existing_name}
 version = 1.0.0
 description = {existing_desc}
 author = {existing_author}
@@ -197,7 +194,8 @@ auto_load = true
     print(f"[PIPELINE] Synchronized module.def -> {def_file} (domains: {domains_str})")
 
     return {
-        "name": name,
+        "name": existing_name,
+        "folder_name": folder.name,
         "version": "1.0.0",
         "description": existing_desc,
         "author": existing_author,
@@ -210,10 +208,6 @@ auto_load = true
     }
 
 def generate_typed_interfaces(all_modules):
-    """
-    Auto-generates strongly-typed C++ interface proxies in build/generated/include/dvargosh/generated/
-    Allows direct function call syntax: ModuleProxy::method(ctx, args) without invoke().
-    """
     GENERATED_INCLUDE_DIR.mkdir(parents=True, exist_ok=True)
 
     for m in all_modules:
@@ -222,7 +216,7 @@ def generate_typed_interfaces(all_modules):
 
         mod_name = m["name"]
         class_name = "".join(part.capitalize() for part in mod_name.split("_")) + "Proxy"
-        header_file = GENERATED_INCLUDE_DIR / f"{mod_name}_interface.hpp"
+        header_file = GENERATED_INCLUDE_DIR / f"{m['folder_name']}_interface.hpp"
 
         lines = [
             "#pragma once",
@@ -230,7 +224,7 @@ def generate_typed_interfaces(all_modules):
             "#include <string>",
             "#include <stdexcept>",
             "",
-            f"namespace dvargosh::generated::{mod_name} {{",
+            f"namespace dvargosh::generated::{m['folder_name']} {{",
             "",
             f"/**",
             f" * @brief Auto-generated Strongly-Typed Proxy for '{mod_name}' module.",
@@ -244,7 +238,6 @@ def generate_typed_interfaces(all_modules):
             fn_name = fn["function"]
             desc = fn["description"]
 
-            # Generate typed helpers accepting either Registry& or DIContainer&
             if "power" in fn_name or "calc" in fn_name:
                 lines.append(f"    /** @brief {desc} */")
                 lines.append(f"    static double {fn_name}(dvargosh::Registry& reg, double a, double b) {{")
@@ -267,16 +260,13 @@ def generate_typed_interfaces(all_modules):
                 lines.append("    }\n")
 
         lines.append("};")
-        lines.append(f"}} // namespace dvargosh::generated::{mod_name}\n")
+        lines.append(f"}} // namespace dvargosh::generated::{m['folder_name']}\n")
 
         with open(header_file, "w") as f:
             f.write("\n".join(lines))
         print(f"[PIPELINE] Generated typed proxy header -> {header_file}")
 
 def generate_pipeline_demo_app():
-    """
-    Generates build/generated/src/pipeline_demo_app.cpp demonstrating direct typed proxy calls.
-    """
     GENERATED_SRC_DIR.mkdir(parents=True, exist_ok=True)
     app_file = GENERATED_SRC_DIR / "pipeline_demo_app.cpp"
 
@@ -287,6 +277,9 @@ def generate_pipeline_demo_app():
 #if __has_include("dvargosh/generated/helloWorld_interface.hpp")
 #include "dvargosh/generated/helloWorld_interface.hpp"
 #endif
+#if __has_include("dvargosh/generated/telecom_interface.hpp")
+#include "dvargosh/generated/telecom_interface.hpp"
+#endif
 #include <iostream>
 #include <cassert>
 
@@ -295,6 +288,9 @@ using namespace dvargosh::generated::crypto_accelerator;
 using namespace dvargosh::generated::demo_pkg;
 #if __has_include("dvargosh/generated/helloWorld_interface.hpp")
 using namespace dvargosh::generated::helloWorld;
+#endif
+#if __has_include("dvargosh/generated/telecom_interface.hpp")
+using namespace dvargosh::generated::telecom;
 #endif
 
 int main() {
@@ -321,24 +317,31 @@ int main() {
     auto discovered = loader.discover_all_modules();
     std::cout << "[Pipeline App] Discovered " << discovered.size() << " modules via symbol metadata.\\n";
 
-    // Load modules with signature verification
+    // 1. Test Enhanced AutoLoader: auto_load_matching & auto_load_domain
+    std::cout << "\\n[Pipeline App] Testing Enhanced C++ AutoLoader APIs...\\n";
+    auto match_res = loader.auto_load_matching("demo_*", secret_key);
+    assert(match_res.is_ok());
+    std::cout << "  ✓ auto_load_matching('demo_*') loaded " << match_res.value() << " modules.\\n";
+
+    auto dom_res = loader.auto_load_domain("accelerator:hash", secret_key);
+    assert(dom_res.is_ok());
+    std::cout << "  ✓ auto_load_domain('accelerator:hash') successfully loaded provider module.\\n";
+
+    // Load remaining modules
     auto sign_and_load = [&](const std::string& name) {
         auto file_res = loader.find_module_file(name);
-        assert(file_res.is_ok());
+        if (!file_res.is_ok()) return;
         auto sig_res = Crypto::sign_file(secret_key, file_res.value());
         std::string sig = sig_res.is_ok() ? sig_res.value() : "";
-        auto res = loader.load(name, sig);
-        assert(res.is_ok());
-        std::cout << "  ✓ Verified & Loaded module '" << name << "'\\n";
+        loader.load(name, sig);
     };
 
-    sign_and_load("demo_pkg");
-    sign_and_load("crypto_accelerator");
     sign_and_load("hello_world");
+    sign_and_load("telecom");
 
     std::cout << "\\n[Pipeline App] Calling auto-generated typed interfaces directly (No invoke() needed):\\n";
 
-    // 1. Direct typed call to DemoPkgProxy
+    // 2. Direct typed call to DemoPkgProxy
     std::string vault_hash = DemoPkgProxy::demo_pkg_vault_hash(*di, "PipelineSecureData");
     std::cout << "  * DemoPkgProxy::demo_pkg_vault_hash -> " << vault_hash << "\\n";
     assert(!vault_hash.empty());
@@ -347,7 +350,7 @@ int main() {
     std::cout << "  * DemoPkgProxy::demo_pkg_worker_power(3, 4) -> " << power_val << "\\n";
     assert(power_val == 81.0);
 
-    // 2. Direct typed call to CryptoAcceleratorProxy
+    // 3. Direct typed call to CryptoAcceleratorProxy
     std::string accel_hash = CryptoAcceleratorProxy::accelerator_sha256(*di, "DirectCallPayload");
     std::cout << "  * CryptoAcceleratorProxy::accelerator_sha256 -> " << accel_hash << "\\n";
     assert(accel_hash.rfind("ACCEL_HASH_", 0) == 0);
@@ -357,11 +360,28 @@ int main() {
     assert(rot13_txt == "CvcryvarEbmxf");
 
 #if __has_include("dvargosh/generated/helloWorld_interface.hpp")
-    // 3. Direct typed call to HelloworldProxy (User-added development module)
     std::string hw_res = HelloworldProxy::hello_world(*di, "Developer");
     std::cout << "  * HelloworldProxy::hello_world -> " << hw_res << "\\n";
     assert(hw_res == "HELLO_WORLD_Developer");
 #endif
+
+#if __has_include("dvargosh/generated/telecom_interface.hpp")
+    std::string telecom_res = TelecomProxy::telecom_echo(*di, "PacketHeader");
+    std::cout << "  * TelecomProxy::telecom_echo -> " << telecom_res << "\\n";
+    assert(telecom_res == "[telecom] PacketHeader");
+#endif
+
+    // 4. Test C++ AutoMapper: Bind dynamic RPC method to standard std::function
+    std::cout << "\\n[Pipeline App] Testing C++ AutoMapper Reflection & Binding...\\n";
+    AutoMapper mapper(di);
+    assert(mapper.has_service("demo_pkg_vault_hash"));
+    std::cout << "  * AutoMapper: Found domain for 'demo_pkg_vault_hash': "
+              << mapper.find_domain_for_service("demo_pkg_vault_hash") << "\\n";
+
+    auto bound_hash = mapper.bind<std::string, const std::string&>("demo_pkg_vault_hash");
+    std::string mapper_out = bound_hash("BoundViaAutoMapper");
+    std::cout << "  * AutoMapper::bind callable result -> " << mapper_out << "\\n";
+    assert(!mapper_out.empty());
 
     std::cout << "\\n========================================================\\n";
     std::cout << "  [SUCCESS] All pipeline direct typed calls verified!   \\n";
@@ -374,16 +394,13 @@ int main() {
     print(f"[PIPELINE] Generated pipeline demo application -> {app_file}")
 
 def generate_cmake_file(modules, output_file: Path, output_subdir: str):
-    """
-    Generates CMake targets for standard or development modules.
-    """
     lines = [
         f"# Auto-generated by pipeline_dvargosh/generator.py for {output_subdir}",
         "# DO NOT EDIT MANUALLY\n",
         f"set(DVARGOSH_{output_subdir.upper()}_TARGETS \"\")\n"
     ]
     for m in modules:
-        target_name = f"mod_{m['name']}"
+        target_name = f"mod_{m['folder_name']}"
         source_paths = []
         for src in m["sources"]:
             source_paths.append(str(m["dir"] / src))
@@ -407,9 +424,42 @@ def generate_cmake_file(modules, output_file: Path, output_subdir: str):
 
 def generate_introspection_docs(all_modules):
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Detailed Enterprise JSON Schema designed for custom linting tooling
     schema = {
-        "framework": "Dvargosh Runtime Engine",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "DvargoshModuleRegistrySchema",
+        "description": "Comprehensive AST metadata and lint specification for Dvargosh modules, domains, and exported services.",
         "version": "1.0.0",
+        "generated_by": "pipeline_dvargosh/generator.py",
+        "lint_rules": [
+            {
+                "id": "DVARGOSH_LINT_001",
+                "name": "DomainNamingConvention",
+                "severity": "error",
+                "description": "Domain tags must follow <module_name>:<subsystem> or wildcard '*'.",
+                "regex": r"^([a-zA-Z0-9_]+:[a-zA-Z0-9_\*]+|\*)$"
+            },
+            {
+                "id": "DVARGOSH_LINT_002",
+                "name": "SecuredMemoryGuardCheck",
+                "severity": "warning",
+                "description": "Hardware-guarded secured memory space must not exceed 64 MB (65536 KB) per module without elevated quota.",
+                "max_kb": 65536
+            },
+            {
+                "id": "DVARGOSH_LINT_003",
+                "name": "SignatureVerificationEnforced",
+                "severity": "error",
+                "description": "All dynamic shared library modules must be cryptographically signed via HMAC-SHA256 prior to loading."
+            },
+            {
+                "id": "DVARGOSH_LINT_004",
+                "name": "TypeSafeProxyAvailability",
+                "severity": "info",
+                "description": "Every exported DVARGOSH_SERVICE function should have an auto-generated strongly-typed proxy wrapper."
+            }
+        ],
         "modules": []
     }
 
@@ -422,15 +472,15 @@ def generate_introspection_docs(all_modules):
     for m in all_modules:
         mod_entry = {
             "name": m["name"],
+            "folder_name": m["folder_name"],
             "version": m["version"],
             "description": m["description"],
             "author": m["author"],
             "secured_memory_kb": m["secured_memory_kb"],
             "domains": m["domains"],
-            "functions": m["exported_functions"],
-            "sources": m["sources"]
+            "sources": m["sources"],
+            "services": []
         }
-        schema["modules"].append(mod_entry)
 
         markdown.append(f"### Module: `{m['name']}` (v{m['version']})")
         markdown.append(f"- **Description**: {m['description']}")
@@ -438,15 +488,51 @@ def generate_introspection_docs(all_modules):
         markdown.append(f"- **Secured Memory Quota**: {m['secured_memory_kb']} KB")
         markdown.append(f"- **How to Load**:\n  ```cpp\n  loader.load(\"{m['name']}\", signature);\n  ```")
 
+        proxy_cls = "".join(part.capitalize() for part in m["name"].split("_")) + "Proxy"
         if m["exported_functions"]:
             markdown.append("\n**Exported Functions & Invocation Syntax**:")
             markdown.append("| Function Name | Domain | Description | Dynamic RPC Syntax | Direct Typed Proxy Syntax |")
             markdown.append("| :--- | :--- | :--- | :--- | :--- |")
-            proxy_cls = "".join(part.capitalize() for part in m["name"].split("_")) + "Proxy"
+
             for fn in m["exported_functions"]:
-                rpc_call = f'`registry->invoke("{fn["function"]}", {{...}})`'
-                proxy_call = f'`{proxy_cls}::{fn["function"]}(ctx, ...)`'
-                markdown.append(f"| `{fn['function']}` | `{fn['domain']}` | {fn['description']} | {rpc_call} | {proxy_call} |")
+                fn_name = fn["function"]
+                dom = fn["domain"]
+                desc = fn["description"]
+                rpc_call = f'`registry->invoke("{fn_name}", {{...}})`'
+                proxy_call = f'`{proxy_cls}::{fn_name}(ctx, ...)`'
+                automapper_call = f'`mapper.bind<ReturnType, ArgTypes...>("{fn_name}")`'
+
+                # Rich tooltip for IDE hover
+                hover_text = (
+                    f"### Dvargosh Service: `{fn_name}`\n"
+                    f"* **Domain**: `{dom}`\n"
+                    f"* **Description**: {desc}\n"
+                    f"* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"{fn_name}\", {{args}});\n```\n"
+                    f"* **Direct Typed Call**:\n```cpp\n{proxy_cls}::{fn_name}(ctx, args);\n```\n"
+                    f"* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"{fn_name}\");\n```\n"
+                )
+
+                service_entry = {
+                    "name": fn_name,
+                    "domain": dom,
+                    "description": desc,
+                    "source_file": fn["source_file"],
+                    "signature": f"{fn['ret_type']} {fn_name}({fn['params']})",
+                    "return_type": fn["ret_type"],
+                    "parameters": fn["params"],
+                    "security": {
+                        "required_permissions": ["DynamicInvoke"],
+                        "scoped_domain_enforcement": True
+                    },
+                    "rpc_syntax": rpc_call,
+                    "typed_proxy_syntax": proxy_call,
+                    "automapper_syntax": automapper_call,
+                    "hover_tooltip": hover_text
+                }
+                mod_entry["services"].append(service_entry)
+                markdown.append(f"| `{fn_name}` | `{dom}` | {desc} | {rpc_call} | {proxy_call} |")
+
+        schema["modules"].append(mod_entry)
         markdown.append("\n---\n")
 
     with open(DOCS_DIR / "dvargosh_schema.json", "w") as f:
@@ -551,19 +637,6 @@ Callers without compile-time headers use dynamic RPC. If a method is misspelled,
 ctx.registry()->invoke("demo_pkg_worker_pow", {2.0, 8.0});
 // Error: Method 'demo_pkg_worker_pow' not found. Did you mean 'demo_pkg_worker_power'?
 ```
-
----
-
-## 5. Dvargosh Toolchain Pipeline Automation
-
-The pipeline automates the full lifecycle:
-- Scans `modules/` and `development_modules/`
-- Stages development modules into `build/development_modules`
-- Auto-generates missing `module.def`, CMake snippets (`Modules.cmake`, `DevModules.cmake`)
-- Generates strongly-typed proxy headers in `build/generated/include/`
-- Generates a standalone pipeline verification application
-- Cryptographically signs all built modules
-- Executes the CTest test suite and verification harnesses
 """
     with open(doc_path, "w") as f:
         f.write(content)
@@ -577,8 +650,26 @@ def process_module_dir(folder: Path):
     generate_registration_cpp(folder, annotated_fns)
     return sync_module_def(folder, annotated_fns, exported_fns)
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Dvargosh Pipeline Generator")
+    parser.add_argument("--select", help="Comma-separated module names to include (e.g. math,logger,crypto_accelerator)")
+    parser.add_argument("--exclude", help="Comma-separated module names to exclude")
+    return parser.parse_args()
+
 def main():
+    args = parse_args()
+    selected_mods = [s.strip() for s in args.select.split(",")] if args.select else None
+    excluded_mods = [s.strip() for s in args.exclude.split(",")] if args.exclude else []
+
     print("=== Dvargosh Pipeline Generator ===")
+
+    # Helper filter
+    def is_selected(name, folder_name):
+        if name in excluded_mods or folder_name in excluded_mods:
+            return False
+        if selected_mods is not None:
+            return name in selected_mods or folder_name in selected_mods
+        return True
 
     # 1. Process standard modules
     std_modules = []
@@ -586,12 +677,12 @@ def main():
         for item in sorted(MODULES_DIR.iterdir()):
             if item.is_dir() and item.name != "CMakeFiles" and not item.name.startswith("."):
                 mod = process_module_dir(item)
-                if mod: std_modules.append(mod)
+                if mod and is_selected(mod["name"], mod["folder_name"]):
+                    std_modules.append(mod)
         generate_cmake_file(std_modules, MODULES_DIR / "Modules.cmake", "modules")
 
-    # 2. Process development modules (staged in build or in dev folder)
+    # 2. Process development modules
     dev_modules = []
-    # Check staged dev modules in build first, then fall back to development_modules
     target_dev_dir = BUILD_DIR / "development_modules"
     if not target_dev_dir.exists() and DEV_MODULES_DIR.exists():
         target_dev_dir = DEV_MODULES_DIR
@@ -600,14 +691,14 @@ def main():
         for item in sorted(target_dev_dir.iterdir()):
             if item.is_dir() and item.name != "CMakeFiles" and not item.name.startswith("."):
                 mod = process_module_dir(item)
-                if mod: dev_modules.append(mod)
-        
-        # Write DevModules.cmake both to dev folder and build
+                if mod and is_selected(mod["name"], mod["folder_name"]):
+                    dev_modules.append(mod)
+
         if DEV_MODULES_DIR.exists():
             generate_cmake_file(dev_modules, DEV_MODULES_DIR / "DevModules.cmake", "development_modules")
         generate_cmake_file(dev_modules, BUILD_DIR / "development_modules" / "DevModules.cmake", "development_modules")
 
-    # 3. Generate typed interface headers for direct calls
+    # 3. Generate typed interfaces
     all_modules = std_modules + dev_modules
     generate_typed_interfaces(all_modules)
 

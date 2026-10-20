@@ -13,3 +13,4 @@
 #include "module.hpp"
 #include "module_loader.hpp"
 #include "module_catalog.hpp"
+#include "auto_mapper.hpp"

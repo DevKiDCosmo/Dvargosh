@@ -1,11 +1,33 @@
+# Build outputs & distribution artifacts
 build/
 bin/
 lib/
+dist/
 *.o
 *.dylib
 *.so
 *.a
+*.dSYM/
+compile_commands.json
+.cache/
+
+# Auto-generated CMake target snippets
+modules/Modules.cmake
+development_modules/DevModules.cmake
+
+# Python cache & virtualenvs
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# IDE & Editor artifacts
 .DS_Store
 .vscode/
 .idea/
-development_modules/DevModules.cmake
+*.swp
+*.swo
+*~
+.clangd/

@@ -1,9 +1,41 @@
 {
-  "framework": "Dvargosh Runtime Engine",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DvargoshModuleRegistrySchema",
+  "description": "Comprehensive AST metadata and lint specification for Dvargosh modules, domains, and exported services.",
   "version": "1.0.0",
+  "generated_by": "pipeline_dvargosh/generator.py",
+  "lint_rules": [
+    {
+      "id": "DVARGOSH_LINT_001",
+      "name": "DomainNamingConvention",
+      "severity": "error",
+      "description": "Domain tags must follow <module_name>:<subsystem> or wildcard '*'.",
+      "regex": "^([a-zA-Z0-9_]+:[a-zA-Z0-9_\\*]+|\\*)$"
+    },
+    {
+      "id": "DVARGOSH_LINT_002",
+      "name": "SecuredMemoryGuardCheck",
+      "severity": "warning",
+      "description": "Hardware-guarded secured memory space must not exceed 64 MB (65536 KB) per module without elevated quota.",
+      "max_kb": 65536
+    },
+    {
+      "id": "DVARGOSH_LINT_003",
+      "name": "SignatureVerificationEnforced",
+      "severity": "error",
+      "description": "All dynamic shared library modules must be cryptographically signed via HMAC-SHA256 prior to loading."
+    },
+    {
+      "id": "DVARGOSH_LINT_004",
+      "name": "TypeSafeProxyAvailability",
+      "severity": "info",
+      "description": "Every exported DVARGOSH_SERVICE function should have an auto-generated strongly-typed proxy wrapper."
+    }
+  ],
   "modules": [
     {
       "name": "demo_pkg",
+      "folder_name": "demo_pkg",
       "version": "1.0.0",
       "description": "Full Demo Package with Subsystems (Domains) and Inter-Subsystem Access Control",
       "author": "Dvargosh Team",
@@ -13,34 +45,55 @@
         "demo_pkg:worker",
         "*"
       ],
-      "functions": [
-        {
-          "function": "demo_pkg_vault_hash",
-          "domain": "demo_pkg:vault",
-          "description": "Auto-registered SHA256 hashing function in vault subsystem",
-          "source_file": "ops_crypto.cpp",
-          "is_macro_export": true,
-          "ret_type": "dvargosh::Value",
-          "params": "const std::vector<dvargosh::Value>& args"
-        },
-        {
-          "function": "demo_pkg_worker_power",
-          "domain": "demo_pkg:worker",
-          "description": "Auto-registered mathematical power function in worker subsystem",
-          "source_file": "ops_calc.cpp",
-          "is_macro_export": true,
-          "ret_type": "dvargosh::Value",
-          "params": "const std::vector<dvargosh::Value>& args"
-        }
-      ],
       "sources": [
         "demo_module.cpp",
         "ops_calc.cpp",
         "ops_crypto.cpp"
+      ],
+      "services": [
+        {
+          "name": "demo_pkg_vault_hash",
+          "domain": "demo_pkg:vault",
+          "description": "Auto-registered SHA256 hashing function in vault subsystem",
+          "source_file": "ops_crypto.cpp",
+          "signature": "dvargosh::Value demo_pkg_vault_hash(const std::vector<dvargosh::Value>& args)",
+          "return_type": "dvargosh::Value",
+          "parameters": "const std::vector<dvargosh::Value>& args",
+          "security": {
+            "required_permissions": [
+              "DynamicInvoke"
+            ],
+            "scoped_domain_enforcement": true
+          },
+          "rpc_syntax": "`registry->invoke(\"demo_pkg_vault_hash\", {...})`",
+          "typed_proxy_syntax": "`DemoPkgProxy::demo_pkg_vault_hash(ctx, ...)`",
+          "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"demo_pkg_vault_hash\")`",
+          "hover_tooltip": "### Dvargosh Service: `demo_pkg_vault_hash`\n* **Domain**: `demo_pkg:vault`\n* **Description**: Auto-registered SHA256 hashing function in vault subsystem\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"demo_pkg_vault_hash\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nDemoPkgProxy::demo_pkg_vault_hash(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"demo_pkg_vault_hash\");\n```\n"
+        },
+        {
+          "name": "demo_pkg_worker_power",
+          "domain": "demo_pkg:worker",
+          "description": "Auto-registered mathematical power function in worker subsystem",
+          "source_file": "ops_calc.cpp",
+          "signature": "dvargosh::Value demo_pkg_worker_power(const std::vector<dvargosh::Value>& args)",
+          "return_type": "dvargosh::Value",
+          "parameters": "const std::vector<dvargosh::Value>& args",
+          "security": {
+            "required_permissions": [
+              "DynamicInvoke"
+            ],
+            "scoped_domain_enforcement": true
+          },
+          "rpc_syntax": "`registry->invoke(\"demo_pkg_worker_power\", {...})`",
+          "typed_proxy_syntax": "`DemoPkgProxy::demo_pkg_worker_power(ctx, ...)`",
+          "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"demo_pkg_worker_power\")`",
+          "hover_tooltip": "### Dvargosh Service: `demo_pkg_worker_power`\n* **Domain**: `demo_pkg:worker`\n* **Description**: Auto-registered mathematical power function in worker subsystem\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"demo_pkg_worker_power\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nDemoPkgProxy::demo_pkg_worker_power(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"demo_pkg_worker_power\");\n```\n"
+        }
       ]
     },
     {
       "name": "logger",
+      "folder_name": "logger",
       "version": "1.0.0",
       "description": "Plug-and-play Console Logging Service",
       "author": "Dvargosh Team",
@@ -48,13 +101,14 @@
       "domains": [
         "*"
       ],
-      "functions": [],
       "sources": [
         "logger_module.cpp"
-      ]
+      ],
+      "services": []
     },
     {
       "name": "math",
+      "folder_name": "math",
       "version": "1.0.0",
       "description": "Mathematical Computations with Arena Memory and Event Emission",
       "author": "Dvargosh Team",
@@ -62,13 +116,14 @@
       "domains": [
         "*"
       ],
-      "functions": [],
       "sources": [
         "math_module.cpp"
-      ]
+      ],
+      "services": []
     },
     {
       "name": "monitor",
+      "folder_name": "monitor",
       "version": "1.0.0",
       "description": "Live Telemetry, System Metrics, and Memory Occupation Monitor",
       "author": "Dvargosh Team",
@@ -76,13 +131,14 @@
       "domains": [
         "*"
       ],
-      "functions": [],
       "sources": [
         "monitor_module.cpp"
-      ]
+      ],
+      "services": []
     },
     {
       "name": "worker",
+      "folder_name": "worker",
       "version": "1.0.0",
       "description": "Isolated Secure Worker Module with Containerized Memory and Event Hooks",
       "author": "Dvargosh Team",
@@ -90,13 +146,14 @@
       "domains": [
         "*"
       ],
-      "functions": [],
       "sources": [
         "worker_module.cpp"
-      ]
+      ],
+      "services": []
     },
     {
       "name": "crypto_accelerator",
+      "folder_name": "crypto_accelerator",
       "version": "1.0.0",
       "description": "Experimental Cryptographic Accelerator Module with Non-Monolithic Auto-Registered Functions",
       "author": "Dvargosh Dev Team",
@@ -106,35 +163,56 @@
         "accelerator:hash",
         "*"
       ],
-      "functions": [
-        {
-          "function": "accelerator_sha256",
-          "domain": "accelerator:hash",
-          "description": "Pipeline-attributed service method 'accelerator_sha256'",
-          "source_file": "hasher.cpp",
-          "ret_type": "std::string",
-          "params": "const std::string& input",
-          "is_macro_export": false
-        },
-        {
-          "function": "accelerator_rot13",
-          "domain": "accelerator:cipher",
-          "description": "Pipeline-attributed service method 'accelerator_rot13'",
-          "source_file": "cipher.cpp",
-          "ret_type": "std::string",
-          "params": "const std::string& input",
-          "is_macro_export": false
-        }
-      ],
       "sources": [
         "_generated_registration.cpp",
         "accelerator_module.cpp",
         "cipher.cpp",
         "hasher.cpp"
+      ],
+      "services": [
+        {
+          "name": "accelerator_sha256",
+          "domain": "accelerator:hash",
+          "description": "Pipeline-attributed service method 'accelerator_sha256'",
+          "source_file": "hasher.cpp",
+          "signature": "std::string accelerator_sha256(const std::string& input)",
+          "return_type": "std::string",
+          "parameters": "const std::string& input",
+          "security": {
+            "required_permissions": [
+              "DynamicInvoke"
+            ],
+            "scoped_domain_enforcement": true
+          },
+          "rpc_syntax": "`registry->invoke(\"accelerator_sha256\", {...})`",
+          "typed_proxy_syntax": "`CryptoAcceleratorProxy::accelerator_sha256(ctx, ...)`",
+          "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"accelerator_sha256\")`",
+          "hover_tooltip": "### Dvargosh Service: `accelerator_sha256`\n* **Domain**: `accelerator:hash`\n* **Description**: Pipeline-attributed service method 'accelerator_sha256'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"accelerator_sha256\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nCryptoAcceleratorProxy::accelerator_sha256(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"accelerator_sha256\");\n```\n"
+        },
+        {
+          "name": "accelerator_rot13",
+          "domain": "accelerator:cipher",
+          "description": "Pipeline-attributed service method 'accelerator_rot13'",
+          "source_file": "cipher.cpp",
+          "signature": "std::string accelerator_rot13(const std::string& input)",
+          "return_type": "std::string",
+          "parameters": "const std::string& input",
+          "security": {
+            "required_permissions": [
+              "DynamicInvoke"
+            ],
+            "scoped_domain_enforcement": true
+          },
+          "rpc_syntax": "`registry->invoke(\"accelerator_rot13\", {...})`",
+          "typed_proxy_syntax": "`CryptoAcceleratorProxy::accelerator_rot13(ctx, ...)`",
+          "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"accelerator_rot13\")`",
+          "hover_tooltip": "### Dvargosh Service: `accelerator_rot13`\n* **Domain**: `accelerator:cipher`\n* **Description**: Pipeline-attributed service method 'accelerator_rot13'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"accelerator_rot13\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nCryptoAcceleratorProxy::accelerator_rot13(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"accelerator_rot13\");\n```\n"
+        }
       ]
     },
     {
-      "name": "helloWorld",
+      "name": "helloworld",
+      "folder_name": "helloWorld",
       "version": "1.0.0",
       "description": "Hello World",
       "author": "I am Nam",
@@ -143,21 +221,69 @@
         "module:*:hello_world",
         "*"
       ],
-      "functions": [
-        {
-          "function": "hello_world",
-          "domain": "module:*:hello_world",
-          "description": "Pipeline-attributed service method 'hello_world'",
-          "source_file": "helloworld.services.cpp",
-          "ret_type": "std::string",
-          "params": "const std::string& input",
-          "is_macro_export": false
-        }
-      ],
       "sources": [
         "_generated_registration.cpp",
         "helloworld.services.cpp",
         "helloworld_module.cpp"
+      ],
+      "services": [
+        {
+          "name": "hello_world",
+          "domain": "module:*:hello_world",
+          "description": "Pipeline-attributed service method 'hello_world'",
+          "source_file": "helloworld.services.cpp",
+          "signature": "std::string hello_world(const std::string& input)",
+          "return_type": "std::string",
+          "parameters": "const std::string& input",
+          "security": {
+            "required_permissions": [
+              "DynamicInvoke"
+            ],
+            "scoped_domain_enforcement": true
+          },
+          "rpc_syntax": "`registry->invoke(\"hello_world\", {...})`",
+          "typed_proxy_syntax": "`HelloworldProxy::hello_world(ctx, ...)`",
+          "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"hello_world\")`",
+          "hover_tooltip": "### Dvargosh Service: `hello_world`\n* **Domain**: `module:*:hello_world`\n* **Description**: Pipeline-attributed service method 'hello_world'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"hello_world\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::hello_world(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"hello_world\");\n```\n"
+        }
+      ]
+    },
+    {
+      "name": "telecom",
+      "folder_name": "telecom",
+      "version": "1.0.0",
+      "description": "Telecom Packet Routing Module",
+      "author": "Dvargosh CI",
+      "secured_memory_kb": 2048,
+      "domains": [
+        "telecom:packet",
+        "*"
+      ],
+      "sources": [
+        "_generated_registration.cpp",
+        "telecom.services.cpp",
+        "telecom_module.cpp"
+      ],
+      "services": [
+        {
+          "name": "telecom_echo",
+          "domain": "telecom:packet",
+          "description": "Pipeline-attributed service method 'telecom_echo'",
+          "source_file": "telecom.services.cpp",
+          "signature": "std::string telecom_echo(const std::string& input)",
+          "return_type": "std::string",
+          "parameters": "const std::string& input",
+          "security": {
+            "required_permissions": [
+              "DynamicInvoke"
+            ],
+            "scoped_domain_enforcement": true
+          },
+          "rpc_syntax": "`registry->invoke(\"telecom_echo\", {...})`",
+          "typed_proxy_syntax": "`TelecomProxy::telecom_echo(ctx, ...)`",
+          "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"telecom_echo\")`",
+          "hover_tooltip": "### Dvargosh Service: `telecom_echo`\n* **Domain**: `telecom:packet`\n* **Description**: Pipeline-attributed service method 'telecom_echo'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"telecom_echo\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nTelecomProxy::telecom_echo(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"telecom_echo\");\n```\n"
+        }
       ]
     }
   ]

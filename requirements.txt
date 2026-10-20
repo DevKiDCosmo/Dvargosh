@@ -1,0 +1,5 @@
+# Dvargosh Toolchain & Pipeline Dependencies
+# Python 3.8+ is required.
+# Rich is optional for enhanced interactive terminal UI;
+# The pipeline automatically falls back to built-in ANSI box formatting if not installed.
+rich>=13.0.0

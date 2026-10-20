@@ -8,18 +8,21 @@
 
 namespace dvargosh {
 
+/**
+ * @brief Discrete capabilities and operational privileges enforced by the Dvargosh security kernel.
+ */
 enum class Permission : uint32_t {
     None             = 0,
-    MemoryExpand     = 1 << 0,  // Request expansion of memory bounds
-    FileIO           = 1 << 1,  // Read/write to disk
-    NetworkAccess    = 1 << 2,  // Sockets / network
-    ServiceRegister  = 1 << 3,  // Register public services
-    DynamicInvoke    = 1 << 4,  // Dynamically invoke foreign services
-    EventPublish     = 1 << 5,  // Broadcast events to system
-    EventSubscribe   = 1 << 6,  // Receive system events
-    SecuredMemory    = 1 << 7,  // Allocate hardware-isolated secured memory
-    SystemInfo       = 1 << 8,  // Introspect host hardware/system
-    Admin            = 0xFFFFFFFF
+    MemoryExpand     = 1 << 0,  ///< Capability to request expansion of memory limits
+    FileIO           = 1 << 1,  ///< Direct read/write filesystem access
+    NetworkAccess    = 1 << 2,  ///< Raw socket and network endpoint communication
+    ServiceRegister  = 1 << 3,  ///< Ability to register public services in the registry
+    DynamicInvoke    = 1 << 4,  ///< Dynamically invoke foreign services across domain boundaries
+    EventPublish     = 1 << 5,  ///< Broadcast events onto the central event bus
+    EventSubscribe   = 1 << 6,  ///< Subscribe to system-wide event topics
+    SecuredMemory    = 1 << 7,  ///< Allocate hardware-isolated, page-guarded memory containers
+    SystemInfo       = 1 << 8,  ///< Introspect host hardware and CPU telemetry
+    Admin            = 0xFFFFFFFF ///< Full administrative privileges
 };
 
 inline Permission operator|(Permission a, Permission b) {
@@ -37,6 +40,9 @@ inline Permission operator~(Permission a) {
 const char* permission_to_string(Permission p);
 Permission string_to_permission(const std::string& str);
 
+/**
+ * @brief Bitmask container representing a composite set of Granted Permissions.
+ */
 class PermissionSet {
 public:
     PermissionSet() : m_mask(Permission::None) {}
@@ -62,6 +68,9 @@ private:
     Permission m_mask;
 };
 
+/**
+ * @brief Active Security Policy governing permissions, memory quotas, and cross-module checks.
+ */
 class SecurityPolicy {
 public:
     SecurityPolicy();
@@ -78,10 +87,11 @@ public:
     static SecurityPolicy strict();
     static SecurityPolicy standard();
     static SecurityPolicy permissive();
+    static SecurityPolicy elevated();
 
 private:
     PermissionSet m_permissions;
-    size_t m_max_memory_bytes = 16 * 1024 * 1024; // 16 MB default quota
+    size_t m_max_memory_bytes = 16 * 1024 * 1024;
 };
 
 } // namespace dvargosh
