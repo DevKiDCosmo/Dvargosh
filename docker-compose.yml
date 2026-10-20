@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  verify:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    command: ["/app/bin/dvargosh", "--modules", "/app/modules"]
+
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    command: ["ctest", "--test-dir", "build", "--output-on-failure", "--verbose"]
+
+  interactive:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    stdin_open: true
+    tty: true
+    command: ["/app/bin/dvargosh", "--modules", "/app/modules", "--interactive"]

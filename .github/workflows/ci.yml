@@ -1,0 +1,90 @@
+name: Dvargosh CI/CD Auto-Verification
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  native-build-and-test:
+    name: Native Build (${{ matrix.os }} - ${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            compiler: gcc
+            cxx: g++
+            c: gcc
+          - os: ubuntu-latest
+            compiler: clang
+            cxx: clang++
+            c: clang
+          - os: macos-latest
+            compiler: apple-clang
+            cxx: clang++
+            c: clang
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build build-essential clang
+
+      - name: Configure CMake
+        env:
+          CC: ${{ matrix.c }}
+          CXX: ${{ matrix.cxx }}
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=17
+
+      - name: Build All Targets
+        run: |
+          cmake --build build --parallel
+
+      - name: Run Unit Tests (CTest)
+        run: |
+          ctest --test-dir build --output-on-failure --verbose
+
+      - name: Run Automated Verification Demo
+        run: |
+          ./build/bin/dvargosh --modules ./build/modules
+
+  docker-container-verification:
+    name: Universal Containerization (Docker Build & Verify)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      - name: Build Multi-Stage Docker Image & Run In-Container Tests
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: builder
+          load: true
+          tags: dvargosh:builder
+
+      - name: Build Minimal Runner Container
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: runner
+          load: true
+          tags: dvargosh:latest
+
+      - name: Run Verification Inside Runner Container
+        run: |
+          docker run --rm dvargosh:latest
