@@ -23,6 +23,7 @@ public:
         static ModuleManifest s_manifest = []() {
             ModuleManifest m;
             m.name = "math";
+            m.domain = "compute";
             m.version = Version{1, 2, 0};
             m.description = "Mathematical Computations with Arena Memory and Event Emission";
             m.author = "Dvargosh Team";

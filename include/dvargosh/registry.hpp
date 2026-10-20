@@ -8,10 +8,12 @@
 #include <memory>
 #include <functional>
 #include <mutex>
-#include <any>
 #include <typeindex>
 
 namespace dvargosh {
+
+class DomainManager;
+class SecuredMemorySpace;
 
 using DynamicMethodFn = std::function<Result<Value>(const std::vector<Value>& args)>;
 
@@ -19,17 +21,30 @@ struct ServiceDescriptor {
     std::string name;
     Version version;
     std::string provider_module;
+    std::string domain;
     std::type_index type_index;
     std::shared_ptr<void> instance;
 
-    ServiceDescriptor(std::string n, Version v, std::string p, std::type_index ti, std::shared_ptr<void> inst)
-        : name(std::move(n)), version(v), provider_module(std::move(p)), type_index(ti), instance(std::move(inst)) {}
+    ServiceDescriptor(
+        std::string n,
+        Version v,
+        std::string p,
+        std::string d,
+        std::type_index ti,
+        std::shared_ptr<void> inst
+    ) : name(std::move(n)),
+        version(v),
+        provider_module(std::move(p)),
+        domain(std::move(d)),
+        type_index(ti),
+        instance(std::move(inst)) {}
 };
 
 struct MethodDescriptor {
     std::string name;
     std::string description;
     std::string provider_module;
+    std::string domain;
     DynamicMethodFn fn;
 };
 
@@ -38,13 +53,17 @@ public:
     Registry();
     ~Registry();
 
-    // Register a typed service interface
+    void set_domain_manager(DomainManager* dm) { m_domain_mgr = dm; }
+    DomainManager* domain_manager() const noexcept { return m_domain_mgr; }
+
+    // Register a typed service interface with domain
     template<typename Interface>
     Result<void> register_service(
         const std::string& service_name,
         std::shared_ptr<Interface> service_impl,
         Version version,
         const std::string& provider_module,
+        const std::string& domain = "default",
         const SecurityPolicy* policy = nullptr
     ) {
         if (policy) {
@@ -67,6 +86,7 @@ public:
                 service_name,
                 version,
                 provider_module,
+                domain,
                 std::type_index(typeid(Interface)),
                 std::static_pointer_cast<void>(service_impl)
             )
@@ -76,13 +96,26 @@ public:
 
     // Retrieve typed service interface
     template<typename Interface>
-    Result<std::shared_ptr<Interface>> get_service(const std::string& service_name) const {
+    Result<std::shared_ptr<Interface>> get_service(
+        const std::string& service_name,
+        const std::string& caller_domain = ""
+    ) const {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_services.find(service_name);
         if (it == m_services.end()) {
             return Result<std::shared_ptr<Interface>>::failure(
                 StatusCode::NotFound, "Service '" + service_name + "' not found in registry"
             );
+        }
+
+        // Domain access check
+        if (!caller_domain.empty() && m_domain_mgr) {
+            if (!check_domain_access(caller_domain, it->second.domain)) {
+                return Result<std::shared_ptr<Interface>>::failure(
+                    StatusCode::PermissionDenied,
+                    "Cross-Domain Violation: Domain '" + caller_domain + "' cannot access service in domain '" + it->second.domain + "'"
+                );
+            }
         }
 
         if (it->second.type_index != std::type_index(typeid(Interface))) {
@@ -98,15 +131,27 @@ public:
 
     Result<void> unregister_service(const std::string& service_name);
     bool has_service(const std::string& service_name, Version min_version = Version{0,0,0}) const;
+    std::string get_service_domain(const std::string& service_name) const;
 
     // --- Dynamic Global Calling / RPC ---
     Result<void> register_method(
         const std::string& method_name,
         const std::string& description,
         const std::string& provider_module,
+        const std::string& domain,
         DynamicMethodFn fn,
         const SecurityPolicy* policy = nullptr
     );
+
+    Result<void> register_method(
+        const std::string& method_name,
+        const std::string& description,
+        const std::string& provider_module,
+        DynamicMethodFn fn,
+        const SecurityPolicy* policy = nullptr
+    ) {
+        return register_method(method_name, description, provider_module, "default", std::move(fn), policy);
+    }
 
     Result<void> unregister_method(const std::string& method_name);
 
@@ -114,6 +159,7 @@ public:
         const std::string& method_name,
         const std::vector<Value>& args = {},
         const std::string& caller_module = "system",
+        const std::string& caller_domain = "system",
         const SecurityPolicy* caller_policy = nullptr
     );
 
@@ -125,7 +171,10 @@ public:
     void dump_report() const;
 
 private:
+    bool check_domain_access(const std::string& from_domain, const std::string& to_domain) const;
+
     mutable std::mutex m_mutex;
+    DomainManager* m_domain_mgr = nullptr;
     std::unordered_map<std::string, ServiceDescriptor> m_services;
     std::unordered_map<std::string, MethodDescriptor> m_methods;
 };

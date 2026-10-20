@@ -19,6 +19,7 @@ public:
         static ModuleManifest s_manifest = []() {
             ModuleManifest m;
             m.name = "worker";
+            m.domain = "worker";
             m.version = Version{1, 0, 0};
             m.description = "Isolated Secure Worker Module with Containerized Memory and Event Hooks";
             m.author = "Dvargosh Team";

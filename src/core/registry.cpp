@@ -1,10 +1,16 @@
 #include "dvargosh/registry.hpp"
+#include "dvargosh/domain.hpp"
 #include <iostream>
 
 namespace dvargosh {
 
 Registry::Registry() = default;
 Registry::~Registry() = default;
+
+bool Registry::check_domain_access(const std::string& from_domain, const std::string& to_domain) const {
+    if (!m_domain_mgr || from_domain.empty() || to_domain.empty()) return true;
+    return m_domain_mgr->check_cross_domain_access(from_domain, to_domain);
+}
 
 Result<void> Registry::unregister_service(const std::string& service_name) {
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -23,10 +29,18 @@ bool Registry::has_service(const std::string& service_name, Version min_version)
     return it->second.version >= min_version;
 }
 
+std::string Registry::get_service_domain(const std::string& service_name) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_services.find(service_name);
+    if (it != m_services.end()) return it->second.domain;
+    return "";
+}
+
 Result<void> Registry::register_method(
     const std::string& method_name,
     const std::string& description,
     const std::string& provider_module,
+    const std::string& domain,
     DynamicMethodFn fn,
     const SecurityPolicy* policy
 ) {
@@ -48,6 +62,7 @@ Result<void> Registry::register_method(
     desc.name = method_name;
     desc.description = description;
     desc.provider_module = provider_module;
+    desc.domain = domain.empty() ? "default" : domain;
     desc.fn = std::move(fn);
 
     m_methods[method_name] = std::move(desc);
@@ -68,6 +83,7 @@ Result<Value> Registry::invoke(
     const std::string& method_name,
     const std::vector<Value>& args,
     const std::string& caller_module,
+    const std::string& caller_domain,
     const SecurityPolicy* caller_policy
 ) {
     if (caller_policy) {
@@ -78,6 +94,7 @@ Result<Value> Registry::invoke(
     }
 
     DynamicMethodFn fn;
+    std::string target_domain;
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         auto it = m_methods.find(method_name);
@@ -85,6 +102,19 @@ Result<Value> Registry::invoke(
             return Result<Value>::failure(StatusCode::NotFound, "Method '" + method_name + "' not found in registry");
         }
         fn = it->second.fn;
+        target_domain = it->second.domain;
+    }
+
+    // Check Cross-Domain Access Permission
+    if (m_domain_mgr && !caller_domain.empty() && caller_domain != "system" && !target_domain.empty()) {
+        if (!m_domain_mgr->check_cross_domain_access(caller_domain, target_domain)) {
+            return Result<Value>::failure(
+                StatusCode::PermissionDenied,
+                "Cross-Domain Violation: Domain '" + caller_domain +
+                "' is not permitted to invoke method '" + method_name +
+                "' in Domain '" + target_domain + "'"
+            );
+        }
     }
 
     try {
@@ -135,18 +165,29 @@ size_t Registry::method_count() const {
 
 void Registry::dump_report() const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    std::cout << "--- [Global Service Registry] ---\n";
-    std::cout << "  Services (" << m_services.size() << "):\n";
+    std::cout << "\n┌─────────────────────────────────────────────────────────────┐\n";
+    std::cout << "│                 DVARGOSH SERVICE REGISTRY                   │\n";
+    std::cout << "├──────────────────┬─────────┬──────────────┬─────────────────┤\n";
+    std::cout << "│ Service Name     │ Version │ Domain       │ Provider        │\n";
+    std::cout << "├──────────────────┼─────────┼──────────────┼─────────────────┤\n";
     for (const auto& [name, s] : m_services) {
-        std::cout << "    * '" << name << "' v" << s.version.to_string()
-                  << " (Provider: " << s.provider_module << ")\n";
+        std::string v = "v" + s.version.to_string();
+        std::cout << "│ " << name;
+        for (size_t i = name.length(); i < 16; ++i) std::cout << " ";
+        std::cout << " │ " << v;
+        for (size_t i = v.length(); i < 7; ++i) std::cout << " ";
+        std::cout << " │ " << s.domain;
+        for (size_t i = s.domain.length(); i < 12; ++i) std::cout << " ";
+        std::cout << " │ " << s.provider_module;
+        for (size_t i = s.provider_module.length(); i < 15; ++i) std::cout << " ";
+        std::cout << " │\n";
     }
-    std::cout << "  Dynamic Methods (" << m_methods.size() << "):\n";
+    std::cout << "├──────────────────┴─────────┴──────────────┴─────────────────┤\n";
+    std::cout << "│ Dynamic Methods (" << m_methods.size() << " registered):" << (m_methods.size() < 10 ? "                           │\n" : "                          │\n");
     for (const auto& [name, m] : m_methods) {
-        std::cout << "    * '" << name << "': " << m.description
-                  << " (Provider: " << m.provider_module << ")\n";
+        std::cout << "│  * " << name << " [" << m.domain << "]: " << m.description << "\n";
     }
-    std::cout << "-----------------------------------\n";
+    std::cout << "└─────────────────────────────────────────────────────────────┘\n\n";
 }
 
 } // namespace dvargosh

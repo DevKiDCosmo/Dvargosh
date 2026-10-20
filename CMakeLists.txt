@@ -32,9 +32,11 @@ set(CORE_SOURCES
     src/core/allocator.cpp
     src/core/resource_manager.cpp
     src/core/event_bus.cpp
+    src/core/domain.cpp
     src/core/registry.cpp
     src/core/di_container.cpp
     src/core/module_loader.cpp
+    src/core/module_catalog.cpp
 )
 
 add_library(dvargosh_core SHARED ${CORE_SOURCES})
@@ -44,42 +46,45 @@ target_include_directories(dvargosh_core PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-# Dynamic Modules (Plugins)
-macro(add_dvargosh_module MODULE_NAME SOURCE_FILE)
-    add_library(mod_${MODULE_NAME} SHARED ${SOURCE_FILE})
-    target_link_libraries(mod_${MODULE_NAME} PRIVATE dvargosh_core)
-    target_include_directories(mod_${MODULE_NAME} PRIVATE include)
-    set_target_properties(mod_${MODULE_NAME} PROPERTIES
-        PREFIX "lib"
-        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/modules
-    )
-endmacro()
-
-add_dvargosh_module(logger modules/logger/logger_module.cpp)
-add_dvargosh_module(math modules/math/math_module.cpp)
-add_dvargosh_module(worker modules/worker/worker_module.cpp)
+# Include Auto-generated Module Targets (from modules/Modules.cmake)
+include(modules/Modules.cmake)
 
 # Main Executable / Demo CLI
 add_executable(dvargosh src/main.cpp)
 target_link_libraries(dvargosh PRIVATE dvargosh_core)
 target_include_directories(dvargosh PRIVATE include)
-add_dependencies(dvargosh mod_logger mod_math mod_worker)
+if(DVARGOSH_ALL_MODULE_TARGETS)
+    add_dependencies(dvargosh ${DVARGOSH_ALL_MODULE_TARGETS})
+endif()
 
 # Test Suite
 enable_testing()
 
-set(TEST_SOURCES
+set(CORE_TEST_SOURCES
     tests/test_main.cpp
     tests/test_crypto.cpp
     tests/test_permissions.cpp
     tests/test_secured_memory.cpp
     tests/test_registry_di.cpp
     tests/test_module_lifecycle.cpp
+    tests/test_violations.cpp
+    tests/test_domains.cpp
 )
 
-add_executable(dvargosh_tests ${TEST_SOURCES})
+set(MODULE_TEST_SOURCES
+    modules/logger/test/test_logger.cpp
+    modules/math/test/test_math.cpp
+    modules/worker/test/test_worker.cpp
+    modules/monitor/test/test_monitor.cpp
+    modules/demo_pkg/test/test_demo_pkg.cpp
+)
+
+add_executable(dvargosh_tests ${CORE_TEST_SOURCES} ${MODULE_TEST_SOURCES})
 target_link_libraries(dvargosh_tests PRIVATE dvargosh_core)
-target_include_directories(dvargosh_tests PRIVATE include tests)
+target_include_directories(dvargosh_tests PRIVATE include tests modules)
+if(DVARGOSH_ALL_MODULE_TARGETS)
+    add_dependencies(dvargosh_tests ${DVARGOSH_ALL_MODULE_TARGETS})
+endif()
 
 add_test(NAME UnitTests COMMAND dvargosh_tests)
 add_test(NAME IntegrationDemo COMMAND dvargosh --modules ${CMAKE_BINARY_DIR}/modules)

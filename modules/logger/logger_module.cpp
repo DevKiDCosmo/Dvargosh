@@ -39,6 +39,7 @@ public:
         static ModuleManifest s_manifest = []() {
             ModuleManifest m;
             m.name = "logger";
+            m.domain = "core";
             m.version = Version{1, 0, 0};
             m.description = "Plug-and-play Console Logging Service";
             m.author = "Dvargosh Team";

@@ -20,6 +20,7 @@ struct ModuleLoaderConfig {
 
 struct LoadedModule {
     std::string name;
+    std::string domain = "default";
     std::string filepath;
     Version version;
     void* lib_handle = nullptr;
@@ -40,6 +41,19 @@ public:
         const std::string& signature_override = "",
         const SecurityPolicy* custom_policy = nullptr
     );
+
+    // Load module by name with signature: searches configured search paths
+    // Usage: loader.load("math", "signature_hex")
+    Result<void> load(
+        const std::string& module_name,
+        const std::string& signature,
+        const SecurityPolicy* custom_policy = nullptr
+    );
+
+    // Search paths management
+    void add_search_path(const std::string& path);
+    const std::vector<std::string>& search_paths() const noexcept { return m_search_paths; }
+    Result<std::string> find_module_file(const std::string& module_name) const;
 
     // Register & load a static / in-memory module
     Result<void> load_static_module(
@@ -67,6 +81,7 @@ public:
 private:
     std::shared_ptr<DIContainer> m_di;
     ModuleLoaderConfig m_config;
+    std::vector<std::string> m_search_paths;
     mutable std::mutex m_mutex;
     std::unordered_map<std::string, LoadedModule> m_loaded_modules;
 };

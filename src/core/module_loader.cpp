@@ -1,11 +1,62 @@
 #include "dvargosh/module_loader.hpp"
 #include <dlfcn.h>
+#include <unistd.h>
 #include <iostream>
 
 namespace dvargosh {
 
 ModuleLoader::ModuleLoader(std::shared_ptr<DIContainer> di, ModuleLoaderConfig config)
-    : m_di(std::move(di)), m_config(std::move(config)) {}
+    : m_di(std::move(di)), m_config(std::move(config)) {
+    // Default search directories
+    m_search_paths.push_back("./build/modules");
+    m_search_paths.push_back("./modules");
+}
+
+void ModuleLoader::add_search_path(const std::string& path) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_search_paths.push_back(path);
+}
+
+Result<std::string> ModuleLoader::find_module_file(const std::string& module_name) const {
+#if defined(__APPLE__)
+    const char* ext = ".dylib";
+#else
+    const char* ext = ".so";
+#endif
+
+    std::vector<std::string> patterns = {
+        "libmod_" + module_name + ext,
+        "lib" + module_name + ext,
+        module_name + ext
+    };
+
+    for (const auto& dir : m_search_paths) {
+        for (const auto& pat : patterns) {
+            std::string candidate = dir + "/" + pat;
+            if (access(candidate.c_str(), F_OK) == 0) {
+                return Result<std::string>::success(candidate);
+            }
+        }
+    }
+
+    return Result<std::string>::failure(
+        StatusCode::NotFound,
+        "Module '" + module_name + "' not found in search paths"
+    );
+}
+
+Result<void> ModuleLoader::load(
+    const std::string& module_name,
+    const std::string& signature,
+    const SecurityPolicy* custom_policy
+) {
+    auto file_res = find_module_file(module_name);
+    if (!file_res.is_ok()) {
+        return Result<void>::failure(file_res.status(), file_res.error_message());
+    }
+
+    return load_from_file(file_res.value(), signature, custom_policy);
+}
 
 ModuleLoader::~ModuleLoader() {
     std::vector<std::string> names;
@@ -97,7 +148,7 @@ Result<void> ModuleLoader::load_from_file(
         }
     }
 
-    auto ctx_res = m_di->create_module_context(mod_name, policy, m_config.secured_memory_size);
+    auto ctx_res = m_di->create_module_context(mod_name, manifest.domain, policy, m_config.secured_memory_size);
     if (!ctx_res.is_ok()) {
         destroy_fn(instance);
         dlclose(handle);
@@ -124,6 +175,7 @@ Result<void> ModuleLoader::load_from_file(
     // 8. Register in loaded modules
     LoadedModule loaded;
     loaded.name = mod_name;
+    loaded.domain = manifest.domain;
     loaded.filepath = filepath;
     loaded.version = manifest.version;
     loaded.lib_handle = handle;
@@ -157,7 +209,7 @@ Result<void> ModuleLoader::load_static_module(
     }
 
     SecurityPolicy policy = custom_policy ? *custom_policy : m_config.default_policy;
-    auto ctx_res = m_di->create_module_context(mod_name, policy, m_config.secured_memory_size);
+    auto ctx_res = m_di->create_module_context(mod_name, manifest.domain, policy, m_config.secured_memory_size);
     if (!ctx_res.is_ok()) {
         return Result<void>::failure(ctx_res.status(), ctx_res.error_message());
     }
@@ -176,6 +228,7 @@ Result<void> ModuleLoader::load_static_module(
 
     LoadedModule loaded;
     loaded.name = mod_name;
+    loaded.domain = manifest.domain;
     loaded.filepath = "<in-memory>";
     loaded.version = manifest.version;
     loaded.lib_handle = nullptr;

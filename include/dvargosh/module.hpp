@@ -14,6 +14,7 @@ struct ModuleManifest {
     Version version;
     std::string description;
     std::string author;
+    std::string domain = "default"; // Domain grouping
     PermissionSet requested_permissions = PermissionSet::standard_module();
     std::string signature; // HMAC-SHA256 signature for verification
 };
