@@ -51,9 +51,13 @@ public:
     bool has_leaks() const;
     const std::string& tag() const { return m_tag; }
 
+    void set_max_capacity(size_t max_bytes) noexcept { m_max_capacity_bytes = max_bytes; }
+    size_t max_capacity() const noexcept { return m_max_capacity_bytes; }
+
 private:
     IAllocator* m_upstream;
     std::string m_tag;
+    size_t m_max_capacity_bytes = 0; // 0 = unlimited
     mutable std::mutex m_mutex;
     MemoryStats m_stats;
     std::unordered_map<void*, size_t> m_active_records;

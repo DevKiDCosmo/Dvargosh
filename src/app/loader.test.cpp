@@ -5,9 +5,7 @@
 using namespace dvargosh;
 
 int main() {
-    std::cout << "\n=================================================================\n";
-    std::cout << "        DVARGOSH STANDALONE APP TEST: LOADER & AUTO-REGISTRATION\n";
-    std::cout << "=================================================================\n\n";
+    std::cout << "[dvargosh] Standalone App Test: Loader & Auto-Registration\n";
 
     auto di = std::make_shared<DIContainer>();
     const std::string secret_key = "dvargosh_master_signing_key_2026";
@@ -113,9 +111,6 @@ int main() {
         std::cout << mem_res.value().to_string() << "\n";
     }
 
-    std::cout << "=================================================================\n";
-    std::cout << "       DVARGOSH APP LOADER TEST PASSED WITH 100% SUCCESS        \n";
-    std::cout << "=================================================================\n\n";
-
+    std::cout << "[dvargosh] Standalone App Loader Test passed with 100% success.\n";
     return 0;
 }

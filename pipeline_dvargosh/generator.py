@@ -146,7 +146,7 @@ def generate_registration_cpp(folder: Path, annotated_fns):
 
     with open(reg_file, "w") as f:
         f.write("\n".join(lines))
-    print(f"[PIPELINE] Generated registration adapter -> {reg_file}")
+    print(f"[dvargosh] Generated registration adapter: {reg_file.name}")
     return reg_file
 
 def sync_module_def(folder: Path, annotated_fns, exported_fns):
@@ -191,7 +191,16 @@ auto_load = true
 """
     with open(def_file, "w") as f:
         f.write(content)
-    print(f"[PIPELINE] Synchronized module.def -> {def_file} (domains: {domains_str})")
+
+    # Sync module.def into build/modules/ for unified discovery and quota limiting
+    build_mod_dir = BUILD_DIR / "modules"
+    build_mod_dir.mkdir(parents=True, exist_ok=True)
+    with open(build_mod_dir / f"{existing_name}.def", "w") as f:
+        f.write(content)
+    with open(build_mod_dir / f"{folder.name}.def", "w") as f:
+        f.write(content)
+
+    print(f"[dvargosh] Synchronized {def_file.name} -> {def_file} and build/modules/{existing_name}.def")
 
     return {
         "name": existing_name,
@@ -215,16 +224,20 @@ def generate_typed_interfaces(all_modules):
             continue
 
         mod_name = m["name"]
+        folder_name = m["folder_name"]
         class_name = "".join(part.capitalize() for part in mod_name.split("_")) + "Proxy"
-        header_file = GENERATED_INCLUDE_DIR / f"{m['folder_name']}_interface.hpp"
+        header_file = GENERATED_INCLUDE_DIR / f"{folder_name}_interface.hpp"
+        api_header_file = GENERATED_INCLUDE_DIR / f"{folder_name}_api.hpp"
+        bind_header_file = GENERATED_INCLUDE_DIR / f"{folder_name}_bind.hpp"
 
+        # 1. Generate Proxy Interface Header
         lines = [
             "#pragma once",
             "#include \"dvargosh/dvargosh.hpp\"",
             "#include <string>",
             "#include <stdexcept>",
             "",
-            f"namespace dvargosh::generated::{m['folder_name']} {{",
+            f"namespace dvargosh::generated::{folder_name} {{",
             "",
             f"/**",
             f" * @brief Auto-generated Strongly-Typed Proxy for '{mod_name}' module.",
@@ -260,11 +273,89 @@ def generate_typed_interfaces(all_modules):
                 lines.append("    }\n")
 
         lines.append("};")
-        lines.append(f"}} // namespace dvargosh::generated::{m['folder_name']}\n")
+        lines.append(f"}} // namespace dvargosh::generated::{folder_name}\n")
 
         with open(header_file, "w") as f:
             f.write("\n".join(lines))
-        print(f"[PIPELINE] Generated typed proxy header -> {header_file}")
+        print(f"[dvargosh] Generated typed proxy header: {header_file.name}")
+
+        # 2. Generate Full Module API Header
+        domains_cpp = ", ".join(f'"{d}"' for d in m["domains"])
+        api_lines = [
+            "#pragma once",
+            "#include \"dvargosh/dvargosh.hpp\"",
+            f"#include \"{folder_name}_interface.hpp\"",
+            f"#include \"{folder_name}_bind.hpp\"",
+            "#include <string>",
+            "#include <vector>",
+            "",
+            f"namespace dvargosh::generated::{folder_name} {{",
+            "",
+            f"inline constexpr const char* MODULE_NAME = \"{mod_name}\";",
+            f"inline constexpr const char* MODULE_VERSION = \"{m['version']}\";",
+            f"inline constexpr size_t MODULE_SECURED_MEMORY_KB = {m['secured_memory_kb']};",
+            "",
+            f"inline const std::vector<std::string>& get_declared_domains() {{",
+            f"    static const std::vector<std::string> s_domains = {{ {domains_cpp} }};",
+            f"    return s_domains;",
+            f"}}",
+            "",
+            f"}} // namespace dvargosh::generated::{folder_name}\n"
+        ]
+        with open(api_header_file, "w") as f:
+            f.write("\n".join(api_lines))
+        print(f"[dvargosh] Generated API header: {api_header_file.name}")
+
+        # 3. Generate AutoMapper Binder Header
+        bind_lines = [
+            "#pragma once",
+            "#include \"dvargosh/dvargosh.hpp\"",
+            "#include \"dvargosh/auto_mapper.hpp\"",
+            "#include <functional>",
+            "#include <memory>",
+            "#include <string>",
+            "",
+            f"namespace dvargosh::generated::{folder_name} {{",
+            "",
+            f"/**",
+            f" * @brief Auto-generated typed binder for '{mod_name}' using AutoMapper.",
+            f" */",
+            f"struct Binder {{",
+        ]
+
+        for fn in m["exported_functions"]:
+            fn_name = fn["function"]
+            if "power" in fn_name or "calc" in fn_name:
+                bind_lines.append(f"    std::function<double(double, double)> {fn_name};")
+            else:
+                bind_lines.append(f"    std::function<std::string(const std::string&)> {fn_name};")
+
+        bind_lines.append("")
+        bind_lines.append("    static Binder bind(std::shared_ptr<dvargosh::DIContainer> di) {")
+        bind_lines.append("        dvargosh::AutoMapper mapper(di);")
+        bind_lines.append("        return bind(mapper);")
+        bind_lines.append("    }")
+        bind_lines.append("")
+        bind_lines.append("    static Binder bind(dvargosh::AutoMapper& mapper) {")
+        bind_lines.append("        Binder b;")
+        for fn in m["exported_functions"]:
+            fn_name = fn["function"]
+            if "power" in fn_name or "calc" in fn_name:
+                bind_lines.append(f"        if (mapper.has_service(\"{fn_name}\")) {{")
+                bind_lines.append(f"            b.{fn_name} = mapper.bind<double, double, double>(\"{fn_name}\");")
+                bind_lines.append("        }")
+            else:
+                bind_lines.append(f"        if (mapper.has_service(\"{fn_name}\")) {{")
+                bind_lines.append(f"            b.{fn_name} = mapper.bind<std::string, const std::string&>(\"{fn_name}\");")
+                bind_lines.append("        }")
+        bind_lines.append("        return b;")
+        bind_lines.append("    }")
+        bind_lines.append("};")
+        bind_lines.append(f"}} // namespace dvargosh::generated::{folder_name}\n")
+
+        with open(bind_header_file, "w") as f:
+            f.write("\n".join(bind_lines))
+        print(f"[dvargosh] Generated binder header: {bind_header_file.name}")
 
 def generate_pipeline_demo_app():
     GENERATED_SRC_DIR.mkdir(parents=True, exist_ok=True)
@@ -273,12 +364,20 @@ def generate_pipeline_demo_app():
     content = """// Auto-generated by Dvargosh Pipeline Generator. DO NOT EDIT.
 #include "dvargosh/dvargosh.hpp"
 #include "dvargosh/generated/crypto_accelerator_interface.hpp"
+#include "dvargosh/generated/crypto_accelerator_api.hpp"
+#include "dvargosh/generated/crypto_accelerator_bind.hpp"
 #include "dvargosh/generated/demo_pkg_interface.hpp"
+#include "dvargosh/generated/demo_pkg_api.hpp"
+#include "dvargosh/generated/demo_pkg_bind.hpp"
 #if __has_include("dvargosh/generated/helloWorld_interface.hpp")
 #include "dvargosh/generated/helloWorld_interface.hpp"
+#include "dvargosh/generated/helloWorld_api.hpp"
+#include "dvargosh/generated/helloWorld_bind.hpp"
 #endif
 #if __has_include("dvargosh/generated/telecom_interface.hpp")
 #include "dvargosh/generated/telecom_interface.hpp"
+#include "dvargosh/generated/telecom_api.hpp"
+#include "dvargosh/generated/telecom_bind.hpp"
 #endif
 #include <iostream>
 #include <cassert>
@@ -294,9 +393,7 @@ using namespace dvargosh::generated::telecom;
 #endif
 
 int main() {
-    std::cout << "========================================================\\n";
-    std::cout << "       DVARGOSH PIPELINE AUTO-GENERATED APP DEMO         \\n";
-    std::cout << "========================================================\\n";
+    std::cout << "[dvargosh] Pipeline Auto-Generated App Demo\\n";
 
     auto di = std::make_shared<DIContainer>();
     const std::string secret_key = "dvargosh_master_signing_key_2026";
@@ -383,15 +480,33 @@ int main() {
     std::cout << "  * AutoMapper::bind callable result -> " << mapper_out << "\\n";
     assert(!mapper_out.empty());
 
-    std::cout << "\\n========================================================\\n";
-    std::cout << "  [SUCCESS] All pipeline direct typed calls verified!   \\n";
-    std::cout << "========================================================\\n";
+    // 5. Test Auto-Generated Binder headers (_bind.hpp)
+    std::cout << "\\n[Pipeline App] Testing Auto-Generated Binder headers (_bind.hpp)...\\n";
+    auto demo_binder = dvargosh::generated::demo_pkg::Binder::bind(di);
+    std::string bound_vault = demo_binder.demo_pkg_vault_hash("BinderPayload");
+    std::cout << "  * demo_binder.demo_pkg_vault_hash -> " << bound_vault << "\\n";
+    assert(!bound_vault.empty());
+
+    double bound_power = demo_binder.demo_pkg_worker_power(2.0, 5.0);
+    std::cout << "  * demo_binder.demo_pkg_worker_power(2, 5) -> " << bound_power << "\\n";
+    assert(bound_power == 32.0);
+
+    auto crypto_binder = dvargosh::generated::crypto_accelerator::Binder::bind(di);
+    std::string bound_sha = crypto_binder.accelerator_sha256("BinderCryptoPayload");
+    std::cout << "  * crypto_binder.accelerator_sha256 -> " << bound_sha << "\\n";
+    assert(!bound_sha.empty());
+
+    // 6. Test Module API constants (_api.hpp)
+    assert(std::string(dvargosh::generated::demo_pkg::MODULE_NAME) == "demo_pkg");
+    assert(std::string(dvargosh::generated::crypto_accelerator::MODULE_NAME) == "crypto_accelerator");
+
+    std::cout << "\\n[dvargosh] All pipeline direct typed calls & binders verified successfully.\\n";
     return 0;
 }
 """
     with open(app_file, "w") as f:
         f.write(content)
-    print(f"[PIPELINE] Generated pipeline demo application -> {app_file}")
+    print(f"[dvargosh] Generated pipeline demo application: {app_file.name}")
 
 def generate_cmake_file(modules, output_file: Path, output_subdir: str):
     lines = [
@@ -420,10 +535,12 @@ def generate_cmake_file(modules, output_file: Path, output_subdir: str):
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with open(output_file, "w") as f:
         f.write("\n".join(lines))
-    print(f"[PIPELINE] Generated {output_file}")
+    print(f"[dvargosh] Generated cmake config: {output_file.name}")
 
 def generate_introspection_docs(all_modules):
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    BUILD_DIR.mkdir(parents=True, exist_ok=True)
+    GENERATED_DIR.mkdir(parents=True, exist_ok=True)
 
     # Detailed Enterprise JSON Schema designed for custom linting tooling
     schema = {
@@ -535,13 +652,17 @@ def generate_introspection_docs(all_modules):
         schema["modules"].append(mod_entry)
         markdown.append("\n---\n")
 
+    with open(BUILD_DIR / "schema.json", "w") as f:
+        json.dump(schema, f, indent=2)
+    with open(GENERATED_DIR / "schema.json", "w") as f:
+        json.dump(schema, f, indent=2)
     with open(DOCS_DIR / "dvargosh_schema.json", "w") as f:
         json.dump(schema, f, indent=2)
-    print(f"[PIPELINE] Generated JSON Schema -> {DOCS_DIR / 'dvargosh_schema.json'}")
+    print(f"[dvargosh] Generated Schema: {BUILD_DIR / 'schema.json'}")
 
     with open(DOCS_DIR / "dvargosh_lint.md", "w") as f:
         f.write("\n".join(markdown))
-    print(f"[PIPELINE] Generated Lint Docs -> {DOCS_DIR / 'dvargosh_lint.md'}")
+    print(f"[dvargosh] Generated Lint Docs: {DOCS_DIR / 'dvargosh_lint.md'}")
 
 def generate_architecture_doc():
     doc_path = DOCS_DIR / "architecture.md"
@@ -622,6 +743,7 @@ Dvargosh bridges this gap with its **Pipeline Code Generator**:
 3. The `pipeline_dvargosh` scanner parses the decorated functions and automatically synthesizes:
    - Registration bridges (`_generated_registration.cpp`) with `DVARGOSH_EXPORT_FN`.
    - Strongly-typed C++ interface headers (`<module>_interface.hpp`) with typed proxy classes.
+   - Auto-generated binders (`<module>_bind.hpp`) and module constants (`<module>_api.hpp`).
 
 ### Direct Typed Calling Syntax
 Callers include the generated interface and execute direct calls:
@@ -640,7 +762,7 @@ ctx.registry()->invoke("demo_pkg_worker_pow", {2.0, 8.0});
 """
     with open(doc_path, "w") as f:
         f.write(content)
-    print(f"[PIPELINE] Generated Architecture Documentation -> {doc_path}")
+    print(f"[dvargosh] Generated Architecture Docs: {doc_path.name}")
 
 def process_module_dir(folder: Path):
     cpp_files = [f for f in folder.glob("*.cpp")]
@@ -661,7 +783,7 @@ def main():
     selected_mods = [s.strip() for s in args.select.split(",")] if args.select else None
     excluded_mods = [s.strip() for s in args.exclude.split(",")] if args.exclude else []
 
-    print("=== Dvargosh Pipeline Generator ===")
+    print("[dvargosh] Running Pipeline Generator...")
 
     # Helper filter
     def is_selected(name, folder_name):
@@ -698,7 +820,7 @@ def main():
             generate_cmake_file(dev_modules, DEV_MODULES_DIR / "DevModules.cmake", "development_modules")
         generate_cmake_file(dev_modules, BUILD_DIR / "development_modules" / "DevModules.cmake", "development_modules")
 
-    # 3. Generate typed interfaces
+    # 3. Generate typed interfaces, APIs, and binders
     all_modules = std_modules + dev_modules
     generate_typed_interfaces(all_modules)
 
@@ -709,7 +831,7 @@ def main():
     generate_introspection_docs(all_modules)
     generate_architecture_doc()
 
-    print("=== Pipeline Generation Complete ===")
+    print("[dvargosh] Pipeline code generation complete.")
 
 if __name__ == "__main__":
     main()

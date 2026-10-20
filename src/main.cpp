@@ -22,11 +22,8 @@ using namespace dvargosh;
 
 void print_banner() {
     std::cout << ANSI_CYAN << ANSI_BOLD
-              << "\n╔═════════════════════════════════════════════════════════════════════════════╗\n"
-              << "║                       DVARGOSH RUNTIME ENGINE v1.0.0                        ║\n"
-              << "║    Modular Sandboxing • Secured Memory • Domain Isolation • Dynamic RPC     ║\n"
-              << "╚═════════════════════════════════════════════════════════════════════════════╝\n"
-              << ANSI_RESET << "\n";
+              << "[dvargosh] Runtime Engine v1.0.0 (Sandboxed Modules • Domains • RPC)\n"
+              << ANSI_RESET;
 }
 
 void print_step(int step, int total, const std::string& title) {
@@ -168,9 +165,9 @@ void run_automated_demonstration(const std::string& module_dir, const std::strin
     print_step(8, 8, "Clean Teardown & Scoped Zero-Leak Memory Audit");
     catalog.unload_all(loader);
 
-    std::cout << "\n╔═════════════════════════════════════════════════════════════════════════════╗\n"
-              << "║     " << ANSI_GREEN << ANSI_BOLD << "ALL DVARGOSH VERIFICATION SUITES & DOMAIN TESTS PASSED WITH 0 LEAKS" << ANSI_RESET << "     ║\n"
-              << "╚═════════════════════════════════════════════════════════════════════════════╝\n\n";
+    std::cout << "\n" << ANSI_GREEN << ANSI_BOLD
+              << "[dvargosh] All verification suites & domain tests passed with 0 leaks.\n"
+              << ANSI_RESET << "\n";
 }
 
 int main(int argc, char** argv) {
@@ -202,15 +199,26 @@ int main(int argc, char** argv) {
     }
 
     // Interactive CLI REPL
-    std::cout << "Starting Dvargosh Interactive CLI...\nType 'help' for commands.\n\n";
+    std::cout << "[dvargosh] Starting Interactive CLI...\nType 'help' for commands.\n\n";
     auto di = std::make_shared<DIContainer>();
     ModuleLoaderConfig cfg;
     cfg.enforce_signatures = false;
     cfg.secret_signing_key = secret_key;
     ModuleLoader loader(di, cfg);
 
+    // Add comprehensive search paths so standard, build, development, and dist modules are discovered
+    loader.add_search_path(module_dir);
+    loader.add_search_path("./build/modules");
+    loader.add_search_path("./build/development_modules");
+    loader.add_search_path("./dist/modules");
+    loader.add_search_path("./modules");
+    loader.add_search_path("./development_modules");
+
     ModuleCatalog catalog;
     register_standard_modules(catalog);
+
+    // Initial discovery
+    loader.discover_all_modules();
 
     std::string line;
     while (std::cout << "dvargosh> " && std::getline(std::cin, line)) {
@@ -223,11 +231,12 @@ int main(int argc, char** argv) {
             break;
         } else if (cmd == "help") {
             std::cout << "Commands:\n"
-                      << "  load_all                     - Load all catalog modules\n"
+                      << "  discover                     - Scan & list all available modules in search paths\n"
+                      << "  load <name_or_file> [sig]    - Load dynamic module by name or path\n"
+                      << "  unload <module_name>         - Unload single module\n"
+                      << "  load_all                     - Load all discovered & catalog modules\n"
                       << "  load_domain <domain>         - Load all modules in domain\n"
                       << "  unload_domain <domain>       - Unload all modules in domain\n"
-                      << "  load <path> [signature]      - Load dynamic module by path\n"
-                      << "  unload <module_name>         - Unload single module\n"
                       << "  invoke <method> [args...]    - Dynamically invoke RPC method\n"
                       << "  domains                      - Display domain registry & memory\n"
                       << "  catalog                      - Display module catalog\n"
@@ -235,16 +244,70 @@ int main(int argc, char** argv) {
                       << "  modules                      - List loaded modules\n"
                       << "  resources                    - List active tracked resources\n"
                       << "  quit                         - Exit\n";
+        } else if (cmd == "discover") {
+            auto discovered = loader.discover_all_modules();
+            std::cout << "Discovered " << discovered.size() << " modules:\n";
+            for (const auto& info : discovered) {
+                std::cout << "  - " << info.name << " (" << info.filename
+                          << ", build: " << info.build_id
+                          << ", path: " << info.full_path << ")\n";
+            }
+        } else if (cmd == "load") {
+            std::string target;
+            iss >> target;
+            std::string sig;
+            iss >> sig;
+            if (target.empty()) {
+                std::cout << "Usage: load <module_name_or_path> [signature]\n";
+                continue;
+            }
+
+            // Auto-sign if secret_key is provided and sig is empty
+            if (sig.empty() && !secret_key.empty()) {
+                auto file_res = loader.find_module_file(target);
+                if (file_res.is_ok()) {
+                    auto s_res = Crypto::sign_file(secret_key, file_res.value());
+                    if (s_res.is_ok()) sig = s_res.value();
+                }
+            }
+
+            auto res = loader.load(target, sig);
+            if (res.is_ok()) {
+                std::cout << "Loaded module '" << target << "'.\n";
+            } else {
+                auto res2 = loader.load_from_file(target, sig);
+                if (res2.is_ok()) {
+                    std::cout << "Loaded module file '" << target << "'.\n";
+                } else {
+                    std::cerr << "Failed to load '" << target << "': " << res.error_message() << "\n";
+                }
+            }
+        } else if (cmd == "unload") {
+            std::string mod_name;
+            iss >> mod_name;
+            if (mod_name.empty()) {
+                std::cout << "Usage: unload <module_name>\n";
+            } else {
+                auto res = loader.unload_module(mod_name);
+                if (res.is_ok()) std::cout << "Unloaded module '" << mod_name << "'.\n";
+                else std::cerr << "Failed: " << res.error_message() << "\n";
+            }
         } else if (cmd == "load_all") {
-            auto res = catalog.load_all(loader, module_dir, secret_key);
-            if (res.is_ok()) std::cout << "Loaded " << res.value() << " modules.\n";
-            else std::cerr << "Failed: " << res.error_message() << "\n";
+            auto disc_res = loader.auto_load_all(secret_key);
+            auto cat_res = catalog.load_all(loader, module_dir, secret_key);
+            size_t total = (disc_res.is_ok() ? disc_res.value() : 0);
+            std::cout << "Loaded " << total << " modules.\n";
         } else if (cmd == "load_domain") {
             std::string dom;
             iss >> dom;
-            auto res = catalog.load_domain(dom, loader, module_dir, secret_key);
-            if (res.is_ok()) std::cout << "Loaded " << res.value() << " modules in domain '" << dom << "'.\n";
-            else std::cerr << "Failed: " << res.error_message() << "\n";
+            auto res = loader.auto_load_domain(dom, secret_key);
+            if (res.is_ok()) {
+                std::cout << "Loaded domain '" << dom << "'.\n";
+            } else {
+                auto res2 = catalog.load_domain(dom, loader, module_dir, secret_key);
+                if (res2.is_ok()) std::cout << "Loaded " << res2.value() << " modules in domain '" << dom << "'.\n";
+                else std::cerr << "Failed: " << res.error_message() << "\n";
+            }
         } else if (cmd == "unload_domain") {
             std::string dom;
             iss >> dom;

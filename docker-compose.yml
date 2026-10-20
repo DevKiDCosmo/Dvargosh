@@ -1,25 +1,12 @@
 version: '3.8'
 
 services:
-  verify:
+  dvargosh:
     build:
       context: .
       dockerfile: Dockerfile
-      target: runner
+    image: dvargosh:latest
+    container_name: dvargosh_app
+    environment:
+      - DVARGOSH_ENV=production
     command: ["/app/bin/dvargosh", "--modules", "/app/modules"]
-
-  tests:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: builder
-    command: ["ctest", "--test-dir", "build", "--output-on-failure", "--verbose"]
-
-  interactive:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runner
-    stdin_open: true
-    tty: true
-    command: ["/app/bin/dvargosh", "--modules", "/app/modules", "--interactive"]

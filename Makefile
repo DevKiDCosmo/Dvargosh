@@ -37,7 +37,13 @@ interactive: build
 	./$(BUILD_DIR)/bin/dvargosh --modules $(MODULES_DIR) --interactive
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) dist
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	find . -type d -name "*.dSYM" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.dylib" -delete 2>/dev/null || true
+	find . -type f -name "*.so" -delete 2>/dev/null || true
+	find . -type f -name "_generated_registration.cpp" -delete 2>/dev/null || true
 
 docker-build:
 	docker build -t dvargosh:latest .
@@ -47,3 +53,6 @@ docker-test:
 
 docker-interactive:
 	docker run -it --rm dvargosh:latest /app/bin/dvargosh --modules /app/modules --interactive
+
+docker-pipeline:
+	./scripts/docker_pipeline.sh

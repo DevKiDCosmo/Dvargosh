@@ -3,8 +3,48 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <iostream>
+#include <fstream>
+#include <unordered_set>
 
 namespace dvargosh {
+
+static size_t read_module_def_quota_bytes(const std::string& mod_name, const std::string& filepath) {
+    std::string dir_part = "";
+    auto last_slash = filepath.find_last_of("/\\");
+    if (last_slash != std::string::npos) {
+        dir_part = filepath.substr(0, last_slash + 1);
+    }
+
+    std::vector<std::string> candidate_defs = {
+        filepath + ".def",
+        dir_part + mod_name + ".def",
+        dir_part + "module.def",
+        "modules/" + mod_name + "/module.def",
+        "development_modules/" + mod_name + "/module.def",
+        "build/development_modules/" + mod_name + "/module.def",
+        "build/modules/" + mod_name + ".def"
+    };
+
+    for (const auto& def_path : candidate_defs) {
+        std::ifstream f(def_path);
+        if (!f.is_open()) continue;
+        std::string line;
+        while (std::getline(f, line)) {
+            auto pos = line.find("secured_memory_kb");
+            if (pos != std::string::npos) {
+                auto eq = line.find('=', pos);
+                if (eq != std::string::npos) {
+                    try {
+                        std::string val_str = line.substr(eq + 1);
+                        size_t kb = std::stoull(val_str);
+                        if (kb > 0) return kb * 1024;
+                    } catch (...) {}
+                }
+            }
+        }
+    }
+    return 0;
+}
 
 ModuleLoader::ModuleLoader(std::shared_ptr<DIContainer> di, ModuleLoaderConfig config)
     : m_di(std::move(di)), m_config(std::move(config)) {
@@ -15,12 +55,16 @@ ModuleLoader::ModuleLoader(std::shared_ptr<DIContainer> di, ModuleLoaderConfig c
 
 void ModuleLoader::add_search_path(const std::string& path) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    for (const auto& existing : m_search_paths) {
+        if (existing == path) return;
+    }
     m_search_paths.push_back(path);
 }
 
 std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<DiscoveredModuleInfo> result;
+    std::unordered_set<std::string> seen_names;
 
 #if defined(__APPLE__)
     const std::string ext = ".dylib";
@@ -66,7 +110,11 @@ std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
 
             m_discovered_by_name[info.name] = info;
             m_discovered_by_filename[info.filename] = info;
-            result.push_back(info);
+
+            if (seen_names.find(info.name) == seen_names.end()) {
+                seen_names.insert(info.name);
+                result.push_back(info);
+            }
         }
         closedir(dir);
     }
@@ -240,13 +288,21 @@ Result<void> ModuleLoader::load_from_file(
         }
     }
 
-    auto ctx_res = m_di->create_module_context(mod_name, manifest.domain, policy, m_config.secured_memory_size);
+    size_t def_quota = read_module_def_quota_bytes(mod_name, filepath);
+    size_t secured_mem_size = (def_quota > 0) ? def_quota : m_config.secured_memory_size;
+
+    auto ctx_res = m_di->create_module_context(mod_name, manifest.domain, policy, secured_mem_size);
     if (!ctx_res.is_ok()) {
         destroy_fn(instance);
         dlclose(handle);
         return Result<void>::failure(ctx_res.status(), ctx_res.error_message());
     }
     auto context = std::move(ctx_res.value());
+
+    // Enforce quota limit on the module's tracked allocator if defined in module.def
+    if (def_quota > 0 && context->allocator()) {
+        context->allocator()->set_max_capacity(def_quota);
+    }
 
     // 7. Lifecycle on_load & on_start
     auto load_res = instance->on_load(*context);

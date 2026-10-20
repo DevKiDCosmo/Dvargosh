@@ -9,24 +9,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     ninja-build \
+    python3 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
 
-# Copy source files
+# Copy source repository components
 COPY CMakeLists.txt .
 COPY include/ include/
 COPY src/ src/
 COPY modules/ modules/
+COPY development_modules/ development_modules/
 COPY tests/ tests/
+COPY pipeline_dvargosh/ pipeline_dvargosh/
+COPY tools/ tools/
+COPY docs/ docs/
 
-# Configure and build
-RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release . && \
-    cmake --build build --parallel
-
-# Run verification tests inside builder stage
-RUN ctest --test-dir build --output-on-failure --verbose
+# Run complete automated production pipeline & verification inside container
+RUN chmod +x pipeline_dvargosh/build_production.sh && \
+    ./pipeline_dvargosh/build_production.sh
 
 # ============================================================================
 # Stage 2: Minimal Universal Runtime Container
@@ -42,13 +44,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy artifacts from builder
-COPY --from=builder /workspace/build/bin/dvargosh /app/bin/dvargosh
-COPY --from=builder /workspace/build/bin/dvargosh_tests /app/bin/dvargosh_tests
-COPY --from=builder /workspace/build/modules /app/modules
+# Copy production distribution from builder
+COPY --from=builder /workspace/dist/ /app/
 
 ENV PATH="/app/bin:${PATH}"
 ENV LD_LIBRARY_PATH="/app/modules:${LD_LIBRARY_PATH}"
 
-# Default command runs automated verification
+# Default command runs automated verification demonstration
 CMD ["/app/bin/dvargosh", "--modules", "/app/modules"]

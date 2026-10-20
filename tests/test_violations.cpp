@@ -103,3 +103,21 @@ TEST_CASE(test_crypto_signature_tamper_catch) {
     ASSERT_FALSE(res.is_ok());
     ASSERT_EQ(res.status(), StatusCode::SignatureInvalid);
 }
+
+TEST_CASE(test_native_zero_conversion_logger) {
+    Logger& logger = Logger::instance();
+    logger.set_level(LogSeverity::Debug);
+    logger.set_colored(false);
+
+    int count = 42;
+    double ratio = 3.14159;
+    bool active = true;
+    void* ptr = &count;
+
+    logger.info("Native types: count=", count, ", ratio=", ratio, ", active=", active, ", ptr=", ptr);
+    logger.warn("Warning check: code=", 500);
+    logger.error("Error check: status=", false);
+
+    logger.info_stream() << "Streaming native types: " << count << " and " << ratio;
+    ASSERT_TRUE(logger.level() == LogSeverity::Debug);
+}

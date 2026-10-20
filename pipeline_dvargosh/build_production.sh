@@ -67,9 +67,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-echo "================================================================================"
-echo "                   DVARGOSH PRODUCTION PACKAGING ENGINE                         "
-echo "================================================================================"
+echo "[dvargosh] Starting Production Packaging Engine..."
 echo "  * Target Distribution: ${OUTPUT_DIR}"
 echo "  * Skip Tests:          ${SKIP_TESTS}"
 echo "  * Clean Build:         ${CLEAN_BUILD}"
@@ -87,7 +85,7 @@ if [ -d "${ROOT_DIR}/development_modules" ]; then
 fi
 
 # 2. Running Pipeline Generator
-echo "[2/6] Running Pipeline Generator (Attributes, Proxies, Lint, CMake)..."
+echo "[2/6] Running Pipeline Generator (Attributes, Proxies, Lint, Schema, CMake)..."
 GEN_ARGS=""
 if [ -n "${SELECTED_MODULES}" ]; then
     GEN_ARGS="--select ${SELECTED_MODULES}"
@@ -101,6 +99,13 @@ cmake -B "${ROOT_DIR}/build" -S "${ROOT_DIR}" \
     -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG"
 cmake --build "${ROOT_DIR}/build" --parallel
 
+# Sync dev modules and def manifests into build/modules/
+mkdir -p "${ROOT_DIR}/build/modules"
+if [ -d "${ROOT_DIR}/build/development_modules" ]; then
+    find "${ROOT_DIR}/build/development_modules" -type f \( -name "*.dylib" -o -name "*.so" \) -exec cp -f {} "${ROOT_DIR}/build/modules/" \;
+fi
+find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f -name "*.def" -exec cp -f {} "${ROOT_DIR}/build/modules/" \; 2>/dev/null || true
+
 # 4. Cryptographic Module Signing
 echo "[4/6] Cryptographically Signing All Production Modules..."
 python3 "${ROOT_DIR}/tools/dvargosh_tool.py" sign "${ROOT_DIR}/build" "${SIGNING_KEY}"
@@ -108,7 +113,7 @@ python3 "${ROOT_DIR}/tools/dvargosh_tool.py" sign "${ROOT_DIR}/build" "${SIGNING
 # 5. Verification Harness (Unless Skipped)
 if [ "${SKIP_TESTS}" = false ]; then
     echo "[5/6] Running Verification Harness..."
-    ctest --test-dir "${ROOT_DIR}/build" --output-on-failure --verbose
+    ctest --test-dir "${ROOT_DIR}/build" --output-on-failure
     "${ROOT_DIR}/build/bin/dvargosh_pipeline_app"
 else
     echo "[5/6] Skipping Verification Harness (--skip-tests specified)."
@@ -125,15 +130,16 @@ mkdir -p "${OUTPUT_DIR}/docs"
 # Copy binaries
 cp -f "${ROOT_DIR}/build/bin/"* "${OUTPUT_DIR}/bin/"
 
-# Copy shared libraries
+# Copy shared libraries and .def manifests
 find "${ROOT_DIR}/build" -type f \( -name "*.dylib" -o -name "*.so" \) -exec cp -f {} "${OUTPUT_DIR}/modules/" \;
+find "${ROOT_DIR}/build/modules" "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f -name "*.def" -exec cp -f {} "${OUTPUT_DIR}/modules/" \; 2>/dev/null || true
 
 # Copy signatures
 if [ -f "${ROOT_DIR}/build/modules/signatures.json" ]; then
     cp -f "${ROOT_DIR}/build/modules/signatures.json" "${OUTPUT_DIR}/signatures.json"
 fi
 
-# Copy public headers & generated proxies
+# Copy public headers & generated proxies/binders/apis
 cp -Rf "${ROOT_DIR}/include/"* "${OUTPUT_DIR}/include/"
 if [ -d "${ROOT_DIR}/build/generated/include" ]; then
     cp -Rf "${ROOT_DIR}/build/generated/include/"* "${OUTPUT_DIR}/include/"
@@ -141,13 +147,11 @@ fi
 
 # Copy documentation & schema
 cp -f "${ROOT_DIR}/docs/"* "${OUTPUT_DIR}/docs/"
+if [ -f "${ROOT_DIR}/build/schema.json" ]; then
+    cp -f "${ROOT_DIR}/build/schema.json" "${OUTPUT_DIR}/schema.json"
+fi
 
-echo "================================================================================"
-echo "                 PRODUCTION PACKAGING SUCCESSFUL (100% PASS)                    "
-echo "================================================================================"
-echo "Distribution directory layout:"
-ls -lh "${OUTPUT_DIR}"
-echo ""
-echo "Binaries: $(ls "${OUTPUT_DIR}/bin")"
-echo "Modules:  $(ls "${OUTPUT_DIR}/modules")"
-echo "Package ready for deployment in ${OUTPUT_DIR}"
+echo "[dvargosh] Production packaging complete (100% pass)."
+echo "  * Binaries: $(ls "${OUTPUT_DIR}/bin")"
+echo "  * Modules:  $(ls "${OUTPUT_DIR}/modules")"
+echo "  * Output:   ${OUTPUT_DIR}"

@@ -75,6 +75,7 @@ Dvargosh bridges this gap with its **Pipeline Code Generator**:
 3. The `pipeline_dvargosh` scanner parses the decorated functions and automatically synthesizes:
    - Registration bridges (`_generated_registration.cpp`) with `DVARGOSH_EXPORT_FN`.
    - Strongly-typed C++ interface headers (`<module>_interface.hpp`) with typed proxy classes.
+   - Auto-generated binders (`<module>_bind.hpp`) and module constants (`<module>_api.hpp`).
 
 ### Direct Typed Calling Syntax
 Callers include the generated interface and execute direct calls:

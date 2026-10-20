@@ -52,6 +52,14 @@ TrackedAllocator::TrackedAllocator(IAllocator* upstream, std::string tag)
       m_tag(std::move(tag)) {}
 
 void* TrackedAllocator::allocate(size_t size, size_t alignment) {
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_max_capacity_bytes > 0 && (m_stats.current_allocated_bytes + size > m_max_capacity_bytes)) {
+            // Memory limit defined in module.def exceeded: hijack and block allocation
+            return nullptr;
+        }
+    }
+
     void* ptr = m_upstream->allocate(size, alignment);
     if (!ptr) return nullptr;
 
@@ -79,6 +87,12 @@ void* TrackedAllocator::reallocate(void* ptr, size_t old_size, size_t new_size, 
         auto it = m_active_records.find(ptr);
         if (it != m_active_records.end()) {
             recorded_old = it->second;
+        }
+        if (m_max_capacity_bytes > 0 && (m_stats.current_allocated_bytes - recorded_old + new_size > m_max_capacity_bytes)) {
+            // Memory limit defined in module.def exceeded: hijack and block reallocation
+            return nullptr;
+        }
+        if (it != m_active_records.end()) {
             m_active_records.erase(it);
         }
     }

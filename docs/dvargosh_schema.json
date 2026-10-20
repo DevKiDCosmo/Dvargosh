@@ -218,7 +218,7 @@
       "author": "I am Nam",
       "secured_memory_kb": 0,
       "domains": [
-        "module:*:hello_world",
+        "captives:hello_world",
         "*"
       ],
       "sources": [
@@ -229,7 +229,7 @@
       "services": [
         {
           "name": "hello_world",
-          "domain": "module:*:hello_world",
+          "domain": "captives:hello_world",
           "description": "Pipeline-attributed service method 'hello_world'",
           "source_file": "helloworld.services.cpp",
           "signature": "std::string hello_world(const std::string& input)",
@@ -244,7 +244,7 @@
           "rpc_syntax": "`registry->invoke(\"hello_world\", {...})`",
           "typed_proxy_syntax": "`HelloworldProxy::hello_world(ctx, ...)`",
           "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"hello_world\")`",
-          "hover_tooltip": "### Dvargosh Service: `hello_world`\n* **Domain**: `module:*:hello_world`\n* **Description**: Pipeline-attributed service method 'hello_world'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"hello_world\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::hello_world(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"hello_world\");\n```\n"
+          "hover_tooltip": "### Dvargosh Service: `hello_world`\n* **Domain**: `captives:hello_world`\n* **Description**: Pipeline-attributed service method 'hello_world'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"hello_world\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::hello_world(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"hello_world\");\n```\n"
         }
       ]
     },
