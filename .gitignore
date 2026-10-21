@@ -1,5 +1,5 @@
 # Build outputs & distribution artifacts
-build/
+build*/
 bin/
 lib/
 dist/

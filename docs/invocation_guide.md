@@ -57,10 +57,10 @@ std::string invokeothers() {
     if (!ctx) return "Error: No active module context";
 
     // 1. High-level call (automatically tags caller_module and caller_domain):
-    auto hash_res = ctx->call("demo_pkg_vault_hash", {dvargosh::Value("DvargoshData")});
+    auto hash_res = ctx->call("demo_pkg.demo_pkg_vault_hash", {dvargosh::Value("DvargoshData")});
 
     // 2. Or direct registry invocation:
-    // auto hash_res = ctx->registry()->invoke("demo_pkg_vault_hash", {Value("DvargoshData")}, "hello_world", "captives:hello_world");
+    // auto hash_res = ctx->registry()->invoke("demo_pkg.demo_pkg_vault_hash", {Value("DvargoshData")}, "hello_world", "captives:hello_world");
 
     return hash_res.is_ok() ? hash_res.value().to_string() : "Error: " + hash_res.error_message();
 }
