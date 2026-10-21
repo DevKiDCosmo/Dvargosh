@@ -105,6 +105,9 @@ DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") {
     auto* ctx = Runtime::get_context("hello_world"); // TODO: get_context is not secured
     if (!ctx) return Result<Value>::failure(StatusCode(23), "Error: No active module context");
     auto res = ctx->call("logger.debug", {Value("just_true called")});
+    if (!res.is_ok()) {
+        std::cerr << "Invoke warning/error: " << res.error_message() << std::endl;
+    }
     std::cout << "just_true called" << std::endl;
     return Result<Value>::success(Value(true));
 }

@@ -50,6 +50,11 @@ public:
             dm->create_domain("captives:hello_world", SecurityPolicy::standard());
             // Explicitly authorize captives:hello_world to access demo_pkg:vault services
             dm->allow_cross_domain("captives:hello_world", "demo_pkg:vault");
+            dm->allow_cross_domain("captives:hello_world", "core");
+
+            // 4. Domain: "value" (for just_true) with permission to access core logging
+            dm->create_domain("value", SecurityPolicy::standard());
+            dm->allow_cross_domain("value", "core");
         }
 
         register_auto_functions(ctx);
