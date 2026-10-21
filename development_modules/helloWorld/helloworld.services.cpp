@@ -3,7 +3,6 @@
 
 namespace dvargosh {
 
-// 1. Normal Service Method
 DVARGOSH_SERVICE(captives:hello_world)
 std::string hello_world(const std::string& input) {
     return "HELLO_WORLD_" + input;
