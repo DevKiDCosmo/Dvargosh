@@ -31,3 +31,5 @@ ENV/
 *.swo
 *~
 .clangd/
+docs/dvargosh_lint.md
+docs/dvargosh_schema.json
