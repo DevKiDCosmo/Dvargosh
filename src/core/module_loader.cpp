@@ -1,4 +1,5 @@
 #include "dvargosh/module_loader.hpp"
+#include "dvargosh/runtime.hpp"
 #include <dlfcn.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -304,9 +305,15 @@ Result<void> ModuleLoader::load_from_file(
         context->allocator()->set_max_capacity(def_quota);
     }
 
+    // Register active context in runtime service locator
+    Runtime::set_active_registry(m_di->registry().get());
+    Runtime::set_active_container(m_di.get());
+    Runtime::register_module_context(mod_name, context.get());
+
     // 7. Lifecycle on_load & on_start
     auto load_res = instance->on_load(*context);
     if (!load_res.is_ok()) {
+        Runtime::unregister_module_context(mod_name);
         destroy_fn(instance);
         dlclose(handle);
         return Result<void>::failure(load_res.status(), "Module on_load failed: " + load_res.error_message());
@@ -315,6 +322,7 @@ Result<void> ModuleLoader::load_from_file(
     auto start_res = instance->on_start(*context);
     if (!start_res.is_ok()) {
         instance->on_unload(*context);
+        Runtime::unregister_module_context(mod_name);
         destroy_fn(instance);
         dlclose(handle);
         return Result<void>::failure(start_res.status(), "Module on_start failed: " + start_res.error_message());
@@ -363,14 +371,20 @@ Result<void> ModuleLoader::load_static_module(
     }
     auto context = std::move(ctx_res.value());
 
+    Runtime::set_active_registry(m_di->registry().get());
+    Runtime::set_active_container(m_di.get());
+    Runtime::register_module_context(mod_name, context.get());
+
     auto load_res = mod->on_load(*context);
     if (!load_res.is_ok()) {
+        Runtime::unregister_module_context(mod_name);
         return Result<void>::failure(load_res.status(), "Static module on_load failed: " + load_res.error_message());
     }
 
     auto start_res = mod->on_start(*context);
     if (!start_res.is_ok()) {
         mod->on_unload(*context);
+        Runtime::unregister_module_context(mod_name);
         return Result<void>::failure(start_res.status(), "Static module on_start failed: " + start_res.error_message());
     }
 
@@ -409,6 +423,8 @@ Result<void> ModuleLoader::unload_module(const std::string& module_name) {
         loaded.instance->on_stop(*loaded.context);
         loaded.instance->on_unload(*loaded.context);
     }
+
+    Runtime::unregister_module_context(module_name);
 
     // Destroy context (cleans registry, event bus, resource manager, secured memory)
     loaded.context.reset();

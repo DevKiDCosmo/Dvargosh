@@ -261,6 +261,16 @@ def generate_typed_interfaces(all_modules):
                 lines.append(f"    static double {fn_name}(dvargosh::DIContainer& di, double a, double b) {{")
                 lines.append(f"        return {fn_name}(*di.registry(), a, b);")
                 lines.append("    }\n")
+            elif not fn.get("params") or fn["params"].strip() == "":
+                lines.append(f"    /** @brief {desc} */")
+                lines.append(f"    static std::string {fn_name}(dvargosh::Registry& reg) {{")
+                lines.append(f"        auto res = reg.invoke(\"{fn_name}\", {{}});")
+                lines.append("        if (!res.is_ok()) throw std::runtime_error(\"Dvargosh RPC Error: \" + res.error_message());")
+                lines.append("        return res.value().to_string();")
+                lines.append("    }")
+                lines.append(f"    static std::string {fn_name}(dvargosh::DIContainer& di) {{")
+                lines.append(f"        return {fn_name}(*di.registry());")
+                lines.append("    }\n")
             else:
                 lines.append(f"    /** @brief {desc} */")
                 lines.append(f"    static std::string {fn_name}(dvargosh::Registry& reg, const std::string& input) {{")
@@ -327,6 +337,8 @@ def generate_typed_interfaces(all_modules):
             fn_name = fn["function"]
             if "power" in fn_name or "calc" in fn_name:
                 bind_lines.append(f"    std::function<double(double, double)> {fn_name};")
+            elif not fn.get("params") or fn["params"].strip() == "":
+                bind_lines.append(f"    std::function<std::string()> {fn_name};")
             else:
                 bind_lines.append(f"    std::function<std::string(const std::string&)> {fn_name};")
 
@@ -343,6 +355,10 @@ def generate_typed_interfaces(all_modules):
             if "power" in fn_name or "calc" in fn_name:
                 bind_lines.append(f"        if (mapper.has_service(\"{fn_name}\")) {{")
                 bind_lines.append(f"            b.{fn_name} = mapper.bind<double, double, double>(\"{fn_name}\");")
+                bind_lines.append("        }")
+            elif not fn.get("params") or fn["params"].strip() == "":
+                bind_lines.append(f"        if (mapper.has_service(\"{fn_name}\")) {{")
+                bind_lines.append(f"            b.{fn_name} = mapper.bind<std::string>(\"{fn_name}\");")
                 bind_lines.append("        }")
             else:
                 bind_lines.append(f"        if (mapper.has_service(\"{fn_name}\")) {{")
@@ -460,6 +476,22 @@ int main() {
     std::string hw_res = HelloworldProxy::hello_world(*di, "Developer");
     std::cout << "  * HelloworldProxy::hello_world -> " << hw_res << "\\n";
     assert(hw_res == "HELLO_WORLD_Developer");
+
+    std::string vault_key = HelloworldProxy::get_safe_vault_key(*di);
+    std::cout << "  * HelloworldProxy::get_safe_vault_key -> " << vault_key << "\\n";
+    assert(vault_key.find("SECURE_KEY_NAM_CAPTIVES") != std::string::npos);
+
+    std::string intruder_space = HelloworldProxy::intruder_access_safe_space(*di);
+    std::cout << "  * HelloworldProxy::intruder_access_safe_space -> " << intruder_space << "\\n";
+    assert(intruder_space.rfind("REJECTED:", 0) == 0);
+
+    std::string intruder_rpc = HelloworldProxy::intruder_invoke_vault(*di);
+    std::cout << "  * HelloworldProxy::intruder_invoke_vault -> " << intruder_rpc << "\\n";
+    assert(intruder_rpc.rfind("REJECTED:", 0) == 0);
+
+    std::string others = HelloworldProxy::invokeothers(*di);
+    std::cout << "  * HelloworldProxy::invokeothers -> " << others << "\\n";
+    assert(!others.empty() && others.find("Error") == std::string::npos);
 #endif
 
 #if __has_include("dvargosh/generated/telecom_interface.hpp")

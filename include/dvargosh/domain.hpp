@@ -87,6 +87,7 @@ public:
     bool check_cross_domain_access(const std::string& from_domain, const std::string& to_domain) const;
 
     SecuredMemorySpace* get_domain_space(const std::string& domain_name);
+    Result<SecuredMemorySpace*> get_domain_space(const std::string& domain_name, const std::string& caller_domain);
 
     Result<SecuredMemorySpace*> init_domain_space(
         const std::string& domain_name,

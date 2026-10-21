@@ -15,3 +15,4 @@
 #include "module_catalog.hpp"
 #include "auto_mapper.hpp"
 #include "logger.hpp"
+#include "runtime.hpp"

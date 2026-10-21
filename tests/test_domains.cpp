@@ -113,3 +113,22 @@ TEST_CASE(test_domain_unplug_and_plug) {
 
     loader.unload_module("compute_node_1");
 }
+
+TEST_CASE(test_domain_space_cross_domain_access_and_rejection) {
+    DomainManager dm;
+    dm.create_domain("vault", SecurityPolicy::strict(), 64 * 1024, false);
+    dm.create_domain("intruder", SecurityPolicy::strict());
+    dm.create_domain("authorized_partner", SecurityPolicy::standard());
+
+    dm.allow_cross_domain("authorized_partner", "vault");
+
+    // 1. Authorized partner can access vault safe space
+    auto auth_res = dm.get_domain_space("vault", "authorized_partner");
+    ASSERT_TRUE(auth_res.is_ok());
+    ASSERT_TRUE(auth_res.value() != nullptr);
+
+    // 2. Intruder is rejected
+    auto reject_res = dm.get_domain_space("vault", "intruder");
+    ASSERT_FALSE(reject_res.is_ok());
+    ASSERT_EQ(reject_res.status(), StatusCode::PermissionDenied);
+}

@@ -121,3 +121,33 @@ TEST_CASE(test_native_zero_conversion_logger) {
     logger.info_stream() << "Streaming native types: " << count << " and " << ratio;
     ASSERT_TRUE(logger.level() == LogSeverity::Debug);
 }
+
+TEST_CASE(test_runtime_context_and_cross_domain_violation) {
+    auto di = std::make_shared<DIContainer>();
+    ModuleLoader loader(di);
+
+    // Create domains
+    di->domain_manager()->create_domain("vault_dom", SecurityPolicy::strict(), 64 * 1024, false);
+    di->domain_manager()->create_domain("intruder_dom", SecurityPolicy::strict());
+
+    // Register a mock secret in vault_dom
+    di->registry()->register_method("vault.secret", "Protected secret", "test_mod", "vault_dom", [](const std::vector<Value>&) -> Result<Value> {
+        return Result<Value>::success(Value("TOP_SECRET_DATA"));
+    });
+
+    // 1. Intruder invokes vault.secret -> rejected
+    auto reject_res = di->registry()->invoke("vault.secret", {}, "intruder_mod", "intruder_dom");
+    ASSERT_FALSE(reject_res.is_ok());
+    ASSERT_EQ(reject_res.status(), StatusCode::PermissionDenied);
+
+    // 2. Intruder attempts memory space access -> rejected
+    auto space_reject = di->domain_manager()->get_domain_space("vault_dom", "intruder_dom");
+    ASSERT_FALSE(space_reject.is_ok());
+    ASSERT_EQ(space_reject.status(), StatusCode::PermissionDenied);
+
+    // 3. Authorized domain after grant
+    di->domain_manager()->allow_cross_domain("intruder_dom", "vault_dom");
+    auto ok_res = di->registry()->invoke("vault.secret", {}, "intruder_mod", "intruder_dom");
+    ASSERT_TRUE(ok_res.is_ok());
+    ASSERT_EQ(ok_res.value().to_string(), "TOP_SECRET_DATA");
+}

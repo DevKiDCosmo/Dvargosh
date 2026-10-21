@@ -155,6 +155,24 @@ SecuredMemorySpace* DomainManager::get_domain_space(const std::string& domain_na
     return nullptr;
 }
 
+Result<SecuredMemorySpace*> DomainManager::get_domain_space(
+    const std::string& domain_name,
+    const std::string& caller_domain
+) {
+    if (!caller_domain.empty() && caller_domain != "system" && !check_cross_domain_access(caller_domain, domain_name)) {
+        return Result<SecuredMemorySpace*>::failure(
+            StatusCode::PermissionDenied,
+            "Cross-Domain Violation: Domain '" + caller_domain +
+            "' is unauthorized to access secured memory space of domain '" + domain_name + "'"
+        );
+    }
+    auto* space = get_domain_space(domain_name);
+    if (!space) {
+        return Result<SecuredMemorySpace*>::failure(StatusCode::NotFound, "No secured memory space found in domain '" + domain_name + "'");
+    }
+    return Result<SecuredMemorySpace*>::success(space);
+}
+
 Result<SecuredMemorySpace*> DomainManager::init_domain_space(
     const std::string& domain_name,
     size_t capacity_bytes,
