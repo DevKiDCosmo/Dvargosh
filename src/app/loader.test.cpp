@@ -58,6 +58,8 @@ int main() {
     if (!sign_and_load("demo_pkg")) return 1;
     if (!sign_and_load("monitor")) return 1;
     if (!sign_and_load("crypto_accelerator")) return 1;
+    if (!sign_and_load("hello_world")) return 1;
+    if (!sign_and_load("worker")) return 1;
 
     // 3. Test Signature Rejection on Tampered Signature
     std::cout << "\n[Step 3] Testing Signature Rejection on Invalid Signature...\n";
@@ -96,6 +98,40 @@ int main() {
     std::cout << "  * accelerator_rot13('HelloDvargosh') => "
               << (rot13_res.is_ok() ? rot13_res.value().to_string() : rot13_res.error_message()) << "\n";
     assert(rot13_res.is_ok());
+
+    // Call get_safe_vault_key (from development_modules/helloWorld)
+    auto vault_key_res = di->registry()->invoke("get_safe_vault_key");
+    std::cout << "  * get_safe_vault_key() => "
+              << (vault_key_res.is_ok() ? vault_key_res.value().to_string() : vault_key_res.error_message()) << "\n";
+    assert(vault_key_res.is_ok());
+    assert(vault_key_res.value().to_string() == "SECURE_KEY_NAM_CAPTIVES_9988_XYZ");
+
+    // Call via alias override (helloworld.captives:vault.get_safe_vault_key)
+    auto alias_res = di->registry()->invoke("helloworld.captives:vault.get_safe_vault_key");
+    std::cout << "  * helloworld.captives:vault.get_safe_vault_key() (alias) => "
+              << (alias_res.is_ok() ? alias_res.value().to_string() : alias_res.error_message()) << "\n";
+    assert(alias_res.is_ok());
+    assert(alias_res.value().to_string() == "SECURE_KEY_NAM_CAPTIVES_9988_XYZ");
+
+    // Call intruder_access_safe_space -> correctly rejected
+    auto breach_res = di->registry()->invoke("intruder_access_safe_space");
+    std::cout << "  * intruder_access_safe_space() => "
+              << (breach_res.is_ok() ? breach_res.value().to_string() : breach_res.error_message()) << "\n";
+    assert(breach_res.is_ok());
+    assert(breach_res.value().to_string().rfind("REJECTED", 0) == 0);
+
+    // Call worker.box_invoke with normal execution
+    auto box_ok = di->registry()->invoke("worker.box_invoke", {Value("accelerator_rot13"), Value("SecretTest"), Value("KILL_TRIGGER")});
+    std::cout << "  * worker.box_invoke(accelerator_rot13, SecretTest) => "
+              << (box_ok.is_ok() ? box_ok.value().to_string() : box_ok.error_message()) << "\n";
+    assert(box_ok.is_ok());
+
+    // Call worker.box_invoke with kill trigger -> terminates process
+    auto box_kill = di->registry()->invoke("worker.box_invoke", {Value("accelerator_rot13"), Value("KILL_TRIGGER"), Value("KILL_TRIGGER")});
+    std::cout << "  * worker.box_invoke with kill trigger => "
+              << (box_kill.is_ok() ? box_kill.value().to_string() : box_kill.error_message()) << "\n";
+    assert(!box_kill.is_ok());
+    assert(box_kill.status() == StatusCode::SecurityTampering);
 
     // 5. Test Handling of Unresolved Functions & Fuzzy Suggestions
     std::cout << "\n[Step 5] Testing Unresolved Function Handling & Suggestions...\n";

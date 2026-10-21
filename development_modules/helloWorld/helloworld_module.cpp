@@ -23,16 +23,24 @@ public:
     Result<void> on_load(ModuleContext& ctx) override {
         DomainManager* dm = ctx.domain_manager();
         if (dm) {
-            // 1. Safe space: initialize domain "captives:vault" with 64 KB hardware-guarded secured memory space
+            // 1. Safe space: initialize domain "captives:vault" with strict policy
             dm->create_domain("captives:vault", SecurityPolicy::strict(), 64 * 1024, true);
 
-            // Store secret key in the safe space
-            auto* space = dm->get_domain_space("captives:vault");
-            if (space) {
-                char* key_buf = static_cast<char*>(space->allocate(64));
-                if (key_buf) {
-                    std::strcpy(key_buf, "SECURE_KEY_NAM_CAPTIVES_9988_XYZ");
-                }
+            // Create high-security cryptographic Vault inside "captives:vault"
+            VaultConfig vcfg;
+            vcfg.name = "captives_vault";
+            vcfg.owner_domain = "captives:vault";
+            vcfg.owner_module = "hello_world";
+            vcfg.capacity_bytes = 64 * 1024;
+            vcfg.security_level = VaultSecurityLevel::TamperProof;
+            vcfg.use_guard_pages = true;
+            vcfg.auto_seal_on_write = true;
+            vcfg.description = "Hardware-guarded high-security cryptographic vault storing root captives tokens.";
+
+            auto vault_res = dm->create_vault(vcfg);
+            if (vault_res.is_ok()) {
+                // Safely write the secret key into the sealed vault
+                vault_res.value()->write_secret("ROOT_KEY", "SECURE_KEY_NAM_CAPTIVES_9988_XYZ");
             }
 
             // 2. Intruder domain: "captives:intruder" with NO access granted to "captives:vault"

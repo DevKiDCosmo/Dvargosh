@@ -16,3 +16,5 @@
 #include "auto_mapper.hpp"
 #include "logger.hpp"
 #include "runtime.hpp"
+#include "execution_context.hpp"
+#include "vault.hpp"

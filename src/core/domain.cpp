@@ -1,5 +1,7 @@
 #include "dvargosh/domain.hpp"
 #include "dvargosh/module_loader.hpp"
+#include "dvargosh/execution_context.hpp"
+#include "dvargosh/logger.hpp"
 #include <iostream>
 #include <algorithm>
 
@@ -58,6 +60,17 @@ void Domain::add_service(const std::string& svc_name) {
 
 void Domain::remove_service(const std::string& svc_name) {
     m_services.erase(std::remove(m_services.begin(), m_services.end(), svc_name), m_services.end());
+}
+
+Result<void> Domain::add_vault(std::shared_ptr<Vault> vault) {
+    if (!vault) return Result<void>::failure(StatusCode::NullPointer, "Vault pointer cannot be null");
+    m_vaults[vault->name()] = std::move(vault);
+    return Result<void>::success();
+}
+
+std::shared_ptr<Vault> Domain::get_vault(const std::string& vault_name) const {
+    auto it = m_vaults.find(vault_name);
+    return it != m_vaults.end() ? it->second : nullptr;
 }
 
 /* ========================================================================= */
@@ -147,6 +160,14 @@ bool DomainManager::check_cross_domain_access(const std::string& from_domain, co
 }
 
 SecuredMemorySpace* DomainManager::get_domain_space(const std::string& domain_name) {
+    std::string caller = ExecutionContext::current_domain();
+    if (caller != "system" && caller != domain_name) {
+        if (!check_cross_domain_access(caller, domain_name)) {
+            log_error("CROSS-DOMAIN VIOLATION: Current domain '", caller,
+                      "' is not authorized to acquire raw pointer to domain space '", domain_name, "'.");
+            return nullptr;
+        }
+    }
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_domains.find(domain_name);
     if (it != m_domains.end()) {
@@ -159,18 +180,86 @@ Result<SecuredMemorySpace*> DomainManager::get_domain_space(
     const std::string& domain_name,
     const std::string& caller_domain
 ) {
-    if (!caller_domain.empty() && caller_domain != "system" && !check_cross_domain_access(caller_domain, domain_name)) {
-        return Result<SecuredMemorySpace*>::failure(
-            StatusCode::PermissionDenied,
-            "Cross-Domain Violation: Domain '" + caller_domain +
-            "' is unauthorized to access secured memory space of domain '" + domain_name + "'"
-        );
+    std::string effective_caller = caller_domain;
+    if (effective_caller.empty()) {
+        effective_caller = ExecutionContext::current_domain();
+    } else {
+        auto tamper = ExecutionContext::verify_not_tampered(caller_domain);
+        if (!tamper.is_ok()) {
+            return Result<SecuredMemorySpace*>::failure(tamper.status(), tamper.error_message());
+        }
     }
-    auto* space = get_domain_space(domain_name);
-    if (!space) {
+
+    if (!effective_caller.empty() && effective_caller != "system" && effective_caller != domain_name) {
+        if (!check_cross_domain_access(effective_caller, domain_name)) {
+            return Result<SecuredMemorySpace*>::failure(
+                StatusCode::PermissionDenied,
+                "Cross-Domain Violation: Domain '" + effective_caller +
+                "' is unauthorized to access secured memory space of domain '" + domain_name + "'"
+            );
+        }
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_domains.find(domain_name);
+    if (it == m_domains.end() || !it->second->secured_space()) {
         return Result<SecuredMemorySpace*>::failure(StatusCode::NotFound, "No secured memory space found in domain '" + domain_name + "'");
     }
-    return Result<SecuredMemorySpace*>::success(space);
+    return Result<SecuredMemorySpace*>::success(it->second->secured_space());
+}
+
+Result<std::shared_ptr<Vault>> DomainManager::create_vault(const VaultConfig& config) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_domains.find(config.owner_domain);
+    if (it == m_domains.end()) {
+        return Result<std::shared_ptr<Vault>>::failure(
+            StatusCode::NotFound, "Cannot create vault: owner domain '" + config.owner_domain + "' does not exist"
+        );
+    }
+
+    auto vault_res = Vault::create(config);
+    if (!vault_res.is_ok()) {
+        return vault_res;
+    }
+
+    vault_res.value()->set_domain_manager(this);
+    it->second->add_vault(vault_res.value());
+    return vault_res;
+}
+
+std::shared_ptr<Vault> DomainManager::get_vault(const std::string& vault_name) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (const auto& [_, domain] : m_domains) {
+        auto v = domain->get_vault(vault_name);
+        if (v) return v;
+    }
+    return nullptr;
+}
+
+Result<std::shared_ptr<Vault>> DomainManager::get_domain_vault(
+    const std::string& domain_name,
+    const std::string& vault_name
+) {
+    std::string caller = ExecutionContext::current_domain();
+    if (caller != "system" && caller != domain_name) {
+        if (!check_cross_domain_access(caller, domain_name)) {
+            return Result<std::shared_ptr<Vault>>::failure(
+                StatusCode::PermissionDenied,
+                "Cross-Domain Violation: Domain '" + caller + "' cannot access vaults in domain '" + domain_name + "'"
+            );
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_domains.find(domain_name);
+    if (it == m_domains.end()) {
+        return Result<std::shared_ptr<Vault>>::failure(StatusCode::NotFound, "Domain '" + domain_name + "' not found");
+    }
+
+    auto v = it->second->get_vault(vault_name);
+    if (!v) {
+        return Result<std::shared_ptr<Vault>>::failure(StatusCode::NotFound, "Vault '" + vault_name + "' not found in domain '" + domain_name + "'");
+    }
+    return Result<std::shared_ptr<Vault>>::success(v);
 }
 
 Result<SecuredMemorySpace*> DomainManager::init_domain_space(

@@ -3,6 +3,7 @@
 #include "types.hpp"
 #include "permissions.hpp"
 #include "secured_memory.hpp"
+#include "vault.hpp"
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -52,6 +53,10 @@ public:
     void remove_service(const std::string& svc_name);
     const std::vector<std::string>& services() const noexcept { return m_services; }
 
+    Result<void> add_vault(std::shared_ptr<Vault> vault);
+    std::shared_ptr<Vault> get_vault(const std::string& vault_name) const;
+    const std::unordered_map<std::string, std::shared_ptr<Vault>>& vaults() const noexcept { return m_vaults; }
+
 private:
     std::string m_name;
     SecurityPolicy m_policy;
@@ -59,6 +64,7 @@ private:
     std::unordered_set<std::string> m_allowed_targets;
     std::vector<std::string> m_modules;
     std::vector<std::string> m_services;
+    std::unordered_map<std::string, std::shared_ptr<Vault>> m_vaults;
 };
 
 class ModuleLoader; // Forward declaration
@@ -88,6 +94,10 @@ public:
 
     SecuredMemorySpace* get_domain_space(const std::string& domain_name);
     Result<SecuredMemorySpace*> get_domain_space(const std::string& domain_name, const std::string& caller_domain);
+
+    Result<std::shared_ptr<Vault>> create_vault(const VaultConfig& config);
+    std::shared_ptr<Vault> get_vault(const std::string& vault_name) const;
+    Result<std::shared_ptr<Vault>> get_domain_vault(const std::string& domain_name, const std::string& vault_name = "default");
 
     Result<SecuredMemorySpace*> init_domain_space(
         const std::string& domain_name,

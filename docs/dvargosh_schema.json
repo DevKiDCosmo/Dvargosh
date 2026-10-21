@@ -287,6 +287,25 @@
           "hover_tooltip": "### Dvargosh Service: `intruder_access_safe_space`\n* **Domain**: `captives:intruder`\n* **Description**: Pipeline-attributed service method 'intruder_access_safe_space'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"intruder_access_safe_space\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::intruder_access_safe_space(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"intruder_access_safe_space\");\n```\n"
         },
         {
+          "name": "intruder_tamper_attempt",
+          "domain": "captives:intruder",
+          "description": "Pipeline-attributed service method 'intruder_tamper_attempt'",
+          "source_file": "helloworld.services.cpp",
+          "signature": "std::string intruder_tamper_attempt()",
+          "return_type": "std::string",
+          "parameters": "",
+          "security": {
+            "required_permissions": [
+              "DynamicInvoke"
+            ],
+            "scoped_domain_enforcement": true
+          },
+          "rpc_syntax": "`registry->invoke(\"intruder_tamper_attempt\", {...})`",
+          "typed_proxy_syntax": "`HelloworldProxy::intruder_tamper_attempt(ctx, ...)`",
+          "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"intruder_tamper_attempt\")`",
+          "hover_tooltip": "### Dvargosh Service: `intruder_tamper_attempt`\n* **Domain**: `captives:intruder`\n* **Description**: Pipeline-attributed service method 'intruder_tamper_attempt'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"intruder_tamper_attempt\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::intruder_tamper_attempt(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"intruder_tamper_attempt\");\n```\n"
+        },
+        {
           "name": "intruder_invoke_vault",
           "domain": "captives:intruder",
           "description": "Pipeline-attributed service method 'intruder_invoke_vault'",

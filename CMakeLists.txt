@@ -38,6 +38,8 @@ set(CORE_SOURCES
     src/core/module_loader.cpp
     src/core/module_catalog.cpp
     src/core/runtime.cpp
+    src/core/execution_context.cpp
+    src/core/vault.cpp
 )
 
 add_library(dvargosh_core SHARED ${CORE_SOURCES})

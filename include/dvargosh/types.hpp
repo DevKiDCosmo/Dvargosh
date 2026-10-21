@@ -28,6 +28,7 @@ enum class StatusCode : int {
     PermissionDenied = -11,
     SignatureInvalid = -12,
     QuotaExceeded = -13,
+    SecurityTampering = -14,
     InternalError = -99
 };
 
@@ -47,6 +48,7 @@ inline const char* status_code_to_string(StatusCode code) {
         case StatusCode::PermissionDenied: return "Permission Denied";
         case StatusCode::SignatureInvalid: return "Signature Invalid";
         case StatusCode::QuotaExceeded: return "Quota Exceeded";
+        case StatusCode::SecurityTampering: return "Security Tampering Detected";
         case StatusCode::InternalError: return "Internal Error";
         default: return "Unknown Error";
     }
@@ -71,6 +73,12 @@ class SecurityException : public DvargoshException {
 public:
     explicit SecurityException(const std::string& msg)
         : DvargoshException(StatusCode::PermissionDenied, msg) {}
+};
+
+class TamperingException : public DvargoshException {
+public:
+    explicit TamperingException(const std::string& msg)
+        : DvargoshException(StatusCode::SecurityTampering, msg) {}
 };
 
 class MemoryLimitException : public DvargoshException {

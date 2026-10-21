@@ -1,5 +1,6 @@
 #include "dvargosh/registry.hpp"
 #include "dvargosh/domain.hpp"
+#include "dvargosh/execution_context.hpp"
 #include <iostream>
 #include <algorithm>
 
@@ -118,21 +119,64 @@ Result<void> Registry::unregister_method(const std::string& method_name) {
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_methods.find(method_name);
     if (it == m_methods.end()) {
+        auto alias_it = m_aliases.find(method_name);
+        if (alias_it != m_aliases.end()) {
+            m_aliases.erase(alias_it);
+            return Result<void>::success();
+        }
         return Result<void>::failure(StatusCode::NotFound, "Method '" + method_name + "' not found");
     }
     m_methods.erase(it);
+
+    for (auto ait = m_aliases.begin(); ait != m_aliases.end();) {
+        if (ait->second == method_name) {
+            ait = m_aliases.erase(ait);
+        } else {
+            ++ait;
+        }
+    }
     return Result<void>::success();
 }
 
 bool Registry::has_method(const std::string& method_name) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_methods.find(method_name) != m_methods.end();
+    if (m_methods.find(method_name) != m_methods.end()) return true;
+    auto it = m_aliases.find(method_name);
+    return (it != m_aliases.end() && m_methods.find(it->second) != m_methods.end());
 }
 
 std::string Registry::get_method_domain(const std::string& method_name) const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    auto it = m_methods.find(method_name);
+    std::string canonical = method_name;
+    auto ait = m_aliases.find(method_name);
+    if (ait != m_aliases.end()) {
+        canonical = ait->second;
+    }
+    auto it = m_methods.find(canonical);
     return it != m_methods.end() ? it->second.domain : "";
+}
+
+Result<void> Registry::register_alias(const std::string& alias, const std::string& target_method) {
+    if (alias.empty() || target_method.empty()) {
+        return Result<void>::failure(StatusCode::InvalidArg, "Alias and target method cannot be empty");
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_aliases[alias] = target_method;
+    return Result<void>::success();
+}
+
+bool Registry::has_alias(const std::string& alias) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_aliases.find(alias) != m_aliases.end();
+}
+
+std::string Registry::resolve_method_name(const std::string& name_or_alias) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_aliases.find(name_or_alias);
+    if (it != m_aliases.end()) {
+        return it->second;
+    }
+    return name_or_alias;
 }
 
 Result<Value> Registry::invoke(
@@ -142,8 +186,27 @@ Result<Value> Registry::invoke(
     const std::string& caller_domain,
     const SecurityPolicy* caller_policy
 ) {
+    // 1. Resolve alias override to canonical method name
+    std::string canonical_method = resolve_method_name(method_name);
+
+    // 2. Automatic domain resolution & anti-spoofing verification
+    std::string effective_caller_domain = caller_domain;
+    std::string effective_caller_module = caller_module;
+
+    if (effective_caller_domain.empty() || effective_caller_domain == "system") {
+        if (!ExecutionContext::is_system() && ExecutionContext::current_domain() != "system") {
+            effective_caller_domain = ExecutionContext::current_domain();
+            effective_caller_module = ExecutionContext::current_module();
+        }
+    } else {
+        auto tamper_res = ExecutionContext::verify_not_tampered(effective_caller_domain);
+        if (!tamper_res.is_ok()) {
+            return Result<Value>::failure(tamper_res.status(), tamper_res.error_message());
+        }
+    }
+
     if (caller_policy) {
-        auto perm_res = caller_policy->check(Permission::DynamicInvoke, caller_module);
+        auto perm_res = caller_policy->check(Permission::DynamicInvoke, effective_caller_module);
         if (!perm_res.is_ok()) {
             return Result<Value>::failure(perm_res.status(), perm_res.error_message());
         }
@@ -151,14 +214,16 @@ Result<Value> Registry::invoke(
 
     DynamicMethodFn fn;
     std::string target_domain;
+    std::string target_module;
     bool found = false;
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        auto it = m_methods.find(method_name);
+        auto it = m_methods.find(canonical_method);
         if (it != m_methods.end()) {
             fn = it->second.fn;
             target_domain = it->second.domain;
+            target_module = it->second.provider_module;
             found = true;
         }
     }
@@ -172,13 +237,13 @@ Result<Value> Registry::invoke(
         }
 
         if (handler) {
-            return handler(method_name, args, caller_domain);
+            return handler(method_name, args, effective_caller_domain);
         }
 
         std::string suggestion;
         {
             std::lock_guard<std::mutex> lock(m_mutex);
-            suggestion = find_similar_method(method_name);
+            suggestion = find_similar_method(canonical_method);
         }
 
         std::string err = "Method '" + method_name + "' not found in registry.";
@@ -189,11 +254,11 @@ Result<Value> Registry::invoke(
     }
 
     // Check Cross-Domain Access Permission
-    if (m_domain_mgr && !caller_domain.empty() && caller_domain != "system" && !target_domain.empty()) {
-        if (!m_domain_mgr->check_cross_domain_access(caller_domain, target_domain)) {
+    if (m_domain_mgr && !effective_caller_domain.empty() && effective_caller_domain != "system" && !target_domain.empty()) {
+        if (!m_domain_mgr->check_cross_domain_access(effective_caller_domain, target_domain)) {
             return Result<Value>::failure(
                 StatusCode::PermissionDenied,
-                "Cross-Domain Violation: Domain '" + caller_domain +
+                "Cross-Domain Violation: Domain '" + effective_caller_domain +
                 "' is not permitted to invoke method '" + method_name +
                 "' in Domain '" + target_domain + "'"
             );
@@ -201,6 +266,7 @@ Result<Value> Registry::invoke(
     }
 
     try {
+        ScopedCallFrame frame(target_module, target_domain, effective_caller_module, effective_caller_domain);
         return fn(args);
     } catch (const DvargoshException& e) {
         return Result<Value>::failure(e.code(), e.what());
@@ -228,6 +294,14 @@ size_t Registry::unregister_provider(const std::string& provider_module) {
         if (it->second.provider_module == provider_module) {
             it = m_methods.erase(it);
             count++;
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto it = m_aliases.begin(); it != m_aliases.end();) {
+        if (m_methods.find(it->second) == m_methods.end()) {
+            it = m_aliases.erase(it);
         } else {
             ++it;
         }

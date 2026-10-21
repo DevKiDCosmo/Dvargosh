@@ -173,6 +173,11 @@ public:
     bool has_method(const std::string& method_name) const;
     std::string get_method_domain(const std::string& method_name) const;
 
+    // --- Alias Resolution for Namespace Distinguishment ---
+    Result<void> register_alias(const std::string& alias, const std::string& target_method);
+    bool has_alias(const std::string& alias) const;
+    std::string resolve_method_name(const std::string& name_or_alias) const;
+
     Result<Value> invoke(
         const std::string& method_name,
         const std::vector<Value>& args = {},
@@ -199,6 +204,7 @@ private:
     UnresolvedHandler m_unresolved_handler = nullptr;
     std::unordered_map<std::string, ServiceDescriptor> m_services;
     std::unordered_map<std::string, MethodDescriptor> m_methods;
+    std::unordered_map<std::string, std::string> m_aliases;
 };
 
 } // namespace dvargosh

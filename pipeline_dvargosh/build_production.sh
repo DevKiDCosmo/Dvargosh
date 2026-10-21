@@ -10,7 +10,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Default arguments
 OUTPUT_DIR="${ROOT_DIR}/dist"
-SIGNING_KEY="dvargosh_production_key_2026"
+SIGNING_KEY="dvargosh_master_signing_key_2026"
 SKIP_TESTS=false
 CLEAN_BUILD=false
 SELECTED_MODULES=""

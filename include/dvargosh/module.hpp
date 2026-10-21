@@ -35,6 +35,11 @@ struct AutoFunctionEntry {
     DynamicMethodFn fn;
 };
 
+struct AutoAliasEntry {
+    std::string target_name;
+    std::string alias_override;
+};
+
 class AutoFunctionRegistry {
 public:
     static AutoFunctionRegistry& instance() {
@@ -46,17 +51,27 @@ public:
         m_entries.push_back(std::move(entry));
     }
 
+    void add_alias(AutoAliasEntry alias) {
+        m_aliases.push_back(std::move(alias));
+    }
+
     const std::vector<AutoFunctionEntry>& entries() const noexcept {
         return m_entries;
     }
 
+    const std::vector<AutoAliasEntry>& aliases() const noexcept {
+        return m_aliases;
+    }
+
     void clear() {
         m_entries.clear();
+        m_aliases.clear();
     }
 
 private:
     AutoFunctionRegistry() = default;
     std::vector<AutoFunctionEntry> m_entries;
+    std::vector<AutoAliasEntry> m_aliases;
 };
 
 struct AutoFunctionRegistrar {
@@ -67,6 +82,15 @@ struct AutoFunctionRegistrar {
         DynamicMethodFn fn
     ) {
         AutoFunctionRegistry::instance().add({name, domain, desc, std::move(fn)});
+    }
+};
+
+struct AutoFunctionAliasRegistrar {
+    AutoFunctionAliasRegistrar(
+        const std::string& target_name,
+        const std::string& alias_override
+    ) {
+        AutoFunctionRegistry::instance().add_alias({target_name, alias_override});
     }
 };
 
@@ -100,6 +124,12 @@ public:
                 &ctx.policy()
             );
         }
+
+        // Register alias overrides (e.g. module.domain.function or module.function)
+        const auto& aliases = AutoFunctionRegistry::instance().aliases();
+        for (const auto& al : aliases) {
+            ctx.registry()->register_alias(al.alias_override, al.target_name);
+        }
     }
 };
 
@@ -127,9 +157,12 @@ using ModuleBuildIdFn = const char* (*)();
 #  define DVARGOSH_FN(...)      /* Dvargosh pipeline marker: commented out at runtime */
 #endif
 
-// TODO: add DVARGOSH_EXPORT_ALIAS_OVERRIDE(fn_name, '') for better distinguishment.
-
-#define DVARGOSH_EXPORT_ALIAS_OVERRIDE(fn_name, alias_override)
+// Automatic Alias Override macro to distinguish methods across modules and domains
+// When defined, allows invocations via either the canonical function name or its full alias override.
+#define DVARGOSH_EXPORT_ALIAS_OVERRIDE(fn_name, alias_override) \
+    [[maybe_unused]] static const dvargosh::AutoFunctionAliasRegistrar _dv_alias_##fn_name( \
+        #fn_name, alias_override \
+    );
 
 // Attribute-like automatic function export macro for non-monolithic source files
 // Usage in any .cpp file:

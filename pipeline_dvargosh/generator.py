@@ -97,6 +97,18 @@ def scan_annotated_functions(folder: Path):
 
     return annotated, exported
 
+def get_module_name(folder: Path) -> str:
+    def_file = folder / "module.def"
+    if def_file.exists():
+        cfg = configparser.ConfigParser()
+        try:
+            cfg.read(def_file)
+            if "module" in cfg and "name" in cfg["module"]:
+                return cfg["module"]["name"]
+        except Exception:
+            pass
+    return folder.name
+
 def generate_registration_cpp(folder: Path, annotated_fns):
     """
     Generates _generated_registration.cpp in folder to bridge native C++ functions
@@ -119,6 +131,8 @@ def generate_registration_cpp(folder: Path, annotated_fns):
         lines.append(f"extern {fn['ret_type']} {fn['function']}({fn['params']});")
     lines.append("")
 
+    mod_name = get_module_name(folder)
+
     for fn in annotated_fns:
         lines.append(f"// Bridge for {fn['function']} (Domain: {fn['domain']})")
         lines.append(f"DVARGOSH_EXPORT_FN({fn['function']}, \"{fn['domain']}\", \"{fn['description']}\") {{")
@@ -140,7 +154,17 @@ def generate_registration_cpp(folder: Path, annotated_fns):
             lines.append(f"    auto res = {fn['function']}(arg0);")
             lines.append("    return Result<Value>::success(Value(res));")
 
-        lines.append("}\n")
+        lines.append("}")
+
+        # DVARGOSH_EXPORT_ALIAS_OVERRIDE:
+        # If domain is not * then alias is module.domain.function, else module.function
+        dom = fn["domain"]
+        if dom == "*" or not dom:
+            alias = f"{mod_name}.{fn['function']}"
+        else:
+            alias = f"{mod_name}.{dom}.{fn['function']}"
+
+        lines.append(f"DVARGOSH_EXPORT_ALIAS_OVERRIDE({fn['function']}, \"{alias}\");\n")
 
     lines.append("} // namespace dvargosh\n")
 

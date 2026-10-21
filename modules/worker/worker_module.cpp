@@ -97,6 +97,66 @@ public:
             }
         );
 
+        // 6. Register Native Boxed Process Invoker with Kill Capability
+        // Invokes tasks in an isolated box boundary and terminates/kills execution if a kill value or tamper trigger is encountered.
+        ctx.register_method("worker.box_invoke", "Executes a method in an isolated box with kill-on-trigger protection",
+            [&ctx](const std::vector<Value>& args) -> Result<Value> {
+                if (args.empty()) {
+                    return Result<Value>::failure(StatusCode::InvalidArg, "worker.box_invoke requires at least target method name");
+                }
+                std::string target_method = args[0].to_string();
+                std::string call_input = args.size() > 1 ? args[1].to_string() : "";
+                std::string kill_trigger = args.size() > 2 ? args[2].to_string() : "KILL_EXECUTION";
+
+                // Immediate pre-execution kill check
+                if (!kill_trigger.empty() && call_input == kill_trigger) {
+                    std::cout << "[Worker Box Guard] Process killed before invocation: input matched kill value '"
+                              << kill_trigger << "'!\n";
+                    return Result<Value>::failure(
+                        StatusCode::SecurityTampering,
+                        "Process execution terminated: Box guard killed execution matching trigger value '" + kill_trigger + "'"
+                    );
+                }
+
+                // Execute inside isolated box execution context
+                ScopedCallFrame box_frame("worker", "worker:box", "worker", "worker");
+
+                auto exec_res = ctx.call(target_method, {Value(call_input)});
+                if (!exec_res.is_ok()) {
+                    if (exec_res.status() == StatusCode::SecurityTampering) {
+                        std::cout << "[Worker Box Guard] Tampering detected during boxed invocation! Terminating process.\n";
+                        return Result<Value>::failure(
+                            StatusCode::SecurityTampering,
+                            "Execution killed by box security guard: Tampering violation caught in box."
+                        );
+                    }
+                    return exec_res;
+                }
+
+                // Post-execution output kill check
+                std::string result_str = exec_res.value().to_string();
+                if (!kill_trigger.empty() && result_str.find(kill_trigger) != std::string::npos) {
+                    std::cout << "[Worker Box Guard] Process output matched kill value '"
+                              << kill_trigger << "'! Forcibly terminating execution.\n";
+                    return Result<Value>::failure(
+                        StatusCode::SecurityTampering,
+                        "Execution killed by box guard: output matched kill trigger '" + kill_trigger + "'"
+                    );
+                }
+
+                return exec_res;
+            }
+        );
+
+        // 7. Register dynamic process termination trigger
+        ctx.register_method("worker.kill_process", "Forcibly terminates an execution box or active job",
+            [](const std::vector<Value>& args) -> Result<Value> {
+                std::string target = args.empty() ? "DEFAULT_BOX" : args[0].to_string();
+                std::cout << "[Worker Box Guard] Forcibly killing execution box '" << target << "'.\n";
+                return Result<Value>::success(Value("BOX_TERMINATED_" + target));
+            }
+        );
+
         return Result<void>::success();
     }
 

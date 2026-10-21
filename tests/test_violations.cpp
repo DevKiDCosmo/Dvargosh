@@ -151,3 +151,101 @@ TEST_CASE(test_runtime_context_and_cross_domain_violation) {
     ASSERT_TRUE(ok_res.is_ok());
     ASSERT_EQ(ok_res.value().to_string(), "TOP_SECRET_DATA");
 }
+
+TEST_CASE(test_domain_spoofing_tamper_kill_violation) {
+    auto dm = std::make_shared<DomainManager>();
+    dm->create_domain("vault_dom", SecurityPolicy::strict(), 64 * 1024, false);
+    dm->create_domain("intruder_dom", SecurityPolicy::strict());
+
+    // Enter execution context as intruder_dom
+    ScopedCallFrame intruder_frame("intruder_mod", "intruder_dom");
+
+    // Attempt to spoof caller_domain by explicitly passing "vault_dom" to acquire safe space
+    auto tamper_res = dm->get_domain_space("vault_dom", "vault_dom");
+
+    // MUST be detected as tampering and rejected with SecurityTampering
+    ASSERT_FALSE(tamper_res.is_ok());
+    ASSERT_EQ(tamper_res.status(), StatusCode::SecurityTampering);
+    ASSERT_TRUE(tamper_res.error_message().find("Tampered domain") != std::string::npos);
+}
+
+TEST_CASE(test_vault_hardware_sealing_and_domain_protection) {
+    auto dm = std::make_shared<DomainManager>();
+    dm->create_domain("secure_subsystem", SecurityPolicy::strict(), 64 * 1024, false);
+    dm->create_domain("rogue_subsystem", SecurityPolicy::strict());
+
+    VaultConfig vcfg;
+    vcfg.name = "crypto_keys";
+    vcfg.owner_domain = "secure_subsystem";
+    vcfg.owner_module = "crypto_mod";
+    vcfg.capacity_bytes = 32 * 1024;
+    vcfg.security_level = VaultSecurityLevel::TamperProof;
+    vcfg.auto_seal_on_write = true;
+    vcfg.description = "Encrypted key storage with hardware page sealing";
+
+    auto vault_res = dm->create_vault(vcfg);
+    ASSERT_TRUE(vault_res.is_ok());
+    auto vault = vault_res.value();
+
+    // 1. Write secret as system/owner
+    {
+        ScopedCallFrame owner_frame("crypto_mod", "secure_subsystem");
+        auto write_res = vault->write_secret("AES_ROOT_KEY", "7F8B9C0D1E2F3A4B5C6D");
+        ASSERT_TRUE(write_res.is_ok());
+        ASSERT_TRUE(vault->is_sealed());
+
+        // Read secret as owner -> succeeds
+        auto read_res = vault->read_secret("AES_ROOT_KEY");
+        ASSERT_TRUE(read_res.is_ok());
+        ASSERT_EQ(read_res.value(), "7F8B9C0D1E2F3A4B5C6D");
+
+        // Verify cryptographic integrity
+        auto integ_res = vault->verify_integrity();
+        ASSERT_TRUE(integ_res.is_ok());
+        ASSERT_TRUE(integ_res.value());
+    }
+
+    // 2. Unauthorized read from rogue_subsystem -> rejected
+    {
+        ScopedCallFrame rogue_frame("rogue_mod", "rogue_subsystem");
+        auto bad_read = vault->read_secret("AES_ROOT_KEY");
+        ASSERT_FALSE(bad_read.is_ok());
+        ASSERT_EQ(bad_read.status(), StatusCode::PermissionDenied);
+
+        // Unauthorized write from rogue_subsystem -> rejected
+        auto bad_write = vault->write_secret("MALICIOUS_KEY", "OVERWRITE_ATTEMPT");
+        ASSERT_FALSE(bad_write.is_ok());
+        ASSERT_EQ(bad_write.status(), StatusCode::PermissionDenied);
+    }
+}
+
+TEST_CASE(test_alias_override_method_resolution) {
+    Registry reg;
+    auto reg_res = reg.register_method(
+        "compute_hash",
+        "Computes payload hash",
+        "demo_pkg",
+        "crypto",
+        [](const std::vector<Value>& args) -> Result<Value> {
+            std::string input = args.empty() ? "" : args[0].to_string();
+            return Result<Value>::success(Value("HASHED_" + input));
+        }
+    );
+    ASSERT_TRUE(reg_res.is_ok());
+
+    // Register alias override
+    auto alias_res = reg.register_alias("demo_pkg.crypto.compute_hash", "compute_hash");
+    ASSERT_TRUE(alias_res.is_ok());
+    ASSERT_TRUE(reg.has_alias("demo_pkg.crypto.compute_hash"));
+    ASSERT_TRUE(reg.has_method("demo_pkg.crypto.compute_hash"));
+
+    // Invoke via canonical name
+    auto call_canonical = reg.invoke("compute_hash", {Value("TestInput")});
+    ASSERT_TRUE(call_canonical.is_ok());
+    ASSERT_EQ(call_canonical.value().to_string(), "HASHED_TestInput");
+
+    // Invoke via alias override
+    auto call_alias = reg.invoke("demo_pkg.crypto.compute_hash", {Value("TestInput")});
+    ASSERT_TRUE(call_alias.is_ok());
+    ASSERT_EQ(call_alias.value().to_string(), "HASHED_TestInput");
+}
