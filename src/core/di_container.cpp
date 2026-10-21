@@ -1,4 +1,6 @@
 #include "dvargosh/di_container.hpp"
+#include "dvargosh/subcontext.hpp"
+#include "dvargosh/runtime.hpp"
 #include "dvargosh/execution_context.hpp"
 #include <iostream>
 
@@ -31,9 +33,37 @@ ModuleContext::ModuleContext(
             domain->add_module(m_module_name);
         }
     }
+
+    // Automatically create the default room space (SubContext) for this module
+    auto def_sub = std::make_shared<SubContext>(
+        "default",
+        m_module_name,
+        this,
+        m_registry.get(),
+        m_domain_mgr.get(),
+        m_event_bus.get(),
+        0, // dynamic memory
+        true
+    );
+    if (!m_domain_name.empty()) {
+        def_sub->attach_domain(m_domain_name);
+    }
+    m_subcontexts["default"] = def_sub;
+    m_hash_to_subcontext[def_sub->hash()] = def_sub.get();
+    Runtime::register_subcontext(def_sub->hash(), def_sub.get());
 }
 
 ModuleContext::~ModuleContext() {
+    // 0. Unregister all subcontexts from global runtime tracking
+    {
+        std::lock_guard<std::mutex> lock(m_subcontext_mutex);
+        for (auto& [_, sub] : m_subcontexts) {
+            if (sub) {
+                Runtime::unregister_subcontext(sub->hash());
+            }
+        }
+    }
+
     // 1. Remove from domain
     if (m_domain_mgr && !m_domain_name.empty()) {
         auto domain = m_domain_mgr->get_domain(m_domain_name);
@@ -80,6 +110,88 @@ void* ModuleContext::allocate_command_memory(size_t size, size_t alignment) {
 
 CommandMemory* ModuleContext::command_memory() noexcept {
     return ExecutionContext::current_command_memory();
+}
+
+Result<SubContext*> ModuleContext::create_subcontext(
+    const std::string& subcontext_name,
+    size_t capacity_bytes,
+    bool use_guard_pages
+) {
+    if (subcontext_name.empty()) {
+        return Result<SubContext*>::failure(StatusCode::InvalidArg, "Subcontext name cannot be empty");
+    }
+
+    std::lock_guard<std::mutex> lock(m_subcontext_mutex);
+    if (m_subcontexts.find(subcontext_name) != m_subcontexts.end()) {
+        return Result<SubContext*>::failure(
+            StatusCode::AlreadyExists,
+            "SubContext '" + subcontext_name + "' already exists in module '" + m_module_name + "'"
+        );
+    }
+
+    auto sub = std::make_shared<SubContext>(
+        subcontext_name,
+        m_module_name,
+        this,
+        m_registry.get(),
+        m_domain_mgr.get(),
+        m_event_bus.get(),
+        capacity_bytes,
+        use_guard_pages
+    );
+
+    SubContext* ptr = sub.get();
+    m_subcontexts[subcontext_name] = sub;
+    m_hash_to_subcontext[ptr->hash()] = ptr;
+
+    // Register with runtime
+    Runtime::register_subcontext(ptr->hash(), ptr);
+
+    return Result<SubContext*>::success(ptr);
+}
+
+SubContext* ModuleContext::get_subcontext(const std::string& subcontext_name) {
+    std::lock_guard<std::mutex> lock(m_subcontext_mutex);
+    auto it = m_subcontexts.find(subcontext_name);
+    return (it != m_subcontexts.end()) ? it->second.get() : nullptr;
+}
+
+SubContext* ModuleContext::get_subcontext_for_domain(const std::string& domain_name) {
+    std::lock_guard<std::mutex> lock(m_subcontext_mutex);
+    // 1. Direct domain attachment lookup
+    for (auto& [_, sub] : m_subcontexts) {
+        if (sub && sub->has_domain(domain_name)) {
+            return sub.get();
+        }
+    }
+    // 2. Fall back to subcontext with matching name
+    auto it = m_subcontexts.find(domain_name);
+    if (it != m_subcontexts.end()) return it->second.get();
+
+    // 3. Fall back to default subcontext
+    auto def_it = m_subcontexts.find("default");
+    if (def_it != m_subcontexts.end()) return def_it->second.get();
+
+    // 4. Fall back to first available subcontext
+    if (!m_subcontexts.empty()) return m_subcontexts.begin()->second.get();
+
+    return nullptr;
+}
+
+SubContext* ModuleContext::get_subcontext_by_hash(const std::string& hash) {
+    std::lock_guard<std::mutex> lock(m_subcontext_mutex);
+    auto it = m_hash_to_subcontext.find(hash);
+    return (it != m_hash_to_subcontext.end()) ? it->second : nullptr;
+}
+
+std::vector<SubContext*> ModuleContext::list_subcontexts() const {
+    std::lock_guard<std::mutex> lock(m_subcontext_mutex);
+    std::vector<SubContext*> list;
+    list.reserve(m_subcontexts.size());
+    for (const auto& [_, sub] : m_subcontexts) {
+        if (sub) list.push_back(sub.get());
+    }
+    return list;
 }
 
 DIContainer::DIContainer()

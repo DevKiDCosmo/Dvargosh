@@ -1,6 +1,11 @@
 #include "dvargosh/runtime.hpp"
 #include "dvargosh/di_container.hpp"
+#include "dvargosh/subcontext.hpp"
 #include "dvargosh/registry.hpp"
+#include "dvargosh/execution_context.hpp"
+#include "dvargosh/logger.hpp"
+#include <dlfcn.h>
+#include <algorithm>
 
 namespace dvargosh {
 
@@ -12,6 +17,11 @@ std::mutex& Runtime::mutex() {
 std::unordered_map<std::string, ModuleContext*>& Runtime::contexts() {
     static std::unordered_map<std::string, ModuleContext*> s_contexts;
     return s_contexts;
+}
+
+std::unordered_map<std::string, SubContext*>& Runtime::subcontexts_by_hash() {
+    static std::unordered_map<std::string, SubContext*> s_subcontexts;
+    return s_subcontexts;
 }
 
 Registry*& Runtime::registry_instance() {
@@ -34,10 +44,121 @@ void Runtime::unregister_module_context(const std::string& module_name) {
     contexts().erase(module_name);
 }
 
+ModuleContext* Runtime::get_context() {
+    // 1. Resolve from active execution frame if available
+    if (ExecutionContext::frame_depth() > 0) {
+        std::string mod = ExecutionContext::current_module();
+        if (!mod.empty() && mod != "untrusted" && mod != "system") {
+            std::lock_guard<std::mutex> lock(mutex());
+            auto it = contexts().find(mod);
+            if (it != contexts().end()) return it->second;
+        }
+    }
+
+    // 2. Resolve caller binary dynamically using dladdr on caller return address
+    void* caller_addr = __builtin_return_address(0);
+    Dl_info info;
+    if (dladdr(caller_addr, &info) && info.dli_fname) {
+        std::string fname = info.dli_fname;
+        std::lock_guard<std::mutex> lock(mutex());
+        for (const auto& [name, ctx] : contexts()) {
+            if (fname.find(name) != std::string::npos) {
+                return ctx;
+            }
+        }
+        // Normalize name check (e.g. hello_world vs helloWorld)
+        for (const auto& [name, ctx] : contexts()) {
+            std::string norm_name = name;
+            norm_name.erase(std::remove(norm_name.begin(), norm_name.end(), '_'), norm_name.end());
+            std::string f_lower = fname;
+            std::transform(f_lower.begin(), f_lower.end(), f_lower.begin(), ::tolower);
+            std::transform(norm_name.begin(), norm_name.end(), norm_name.begin(), ::tolower);
+            if (f_lower.find(norm_name) != std::string::npos) {
+                return ctx;
+            }
+        }
+    }
+
+    // 3. Fallback: if only one module context is loaded in host, return it
+    std::lock_guard<std::mutex> lock(mutex());
+    if (contexts().size() == 1) {
+        return contexts().begin()->second;
+    }
+
+    return nullptr;
+}
+
 ModuleContext* Runtime::get_context(const std::string& module_name) {
+    if (module_name.empty()) {
+        return get_context();
+    }
+    // Anti-hijacking check: caller cannot fetch foreign module context
+    if (ExecutionContext::frame_depth() > 0) {
+        std::string caller = ExecutionContext::current_module();
+        if (!caller.empty() && caller != "untrusted" && caller != "system" && caller != module_name) {
+            log_error("SECURITY ALERT: Module '", caller,
+                      "' attempted unauthorized access to context of foreign module '", module_name, "'. Access denied.");
+            return nullptr;
+        }
+    }
     std::lock_guard<std::mutex> lock(mutex());
     auto it = contexts().find(module_name);
     return (it != contexts().end()) ? it->second : nullptr;
+}
+
+ModuleContext* Runtime::current_context() {
+    if (ExecutionContext::frame_depth() == 0) {
+        return nullptr;
+    }
+    auto val = ExecutionContext::validate_stack_integrity();
+    if (!val.is_ok()) {
+        log_error("Runtime::current_context: Stack tampering detected!");
+        return nullptr;
+    }
+    std::string mod = ExecutionContext::current_module();
+    if (mod.empty() || mod == "untrusted") return nullptr;
+    return get_context(mod);
+}
+
+SubContext* Runtime::current_subcontext() {
+    if (ExecutionContext::frame_depth() == 0) {
+        return nullptr;
+    }
+    auto val = ExecutionContext::validate_stack_integrity();
+    if (!val.is_ok()) {
+        log_error("Runtime::current_subcontext: Stack tampering detected!");
+        return nullptr;
+    }
+    std::string mod = ExecutionContext::current_module();
+    std::string dom = ExecutionContext::current_domain();
+    if (mod.empty() || mod == "untrusted") return nullptr;
+
+    ModuleContext* mctx = get_context(mod);
+    if (!mctx) return nullptr;
+
+    return mctx->get_subcontext_for_domain(dom);
+}
+
+SubContext* Runtime::get_subcontext(const std::string& module_name, const std::string& domain_name) {
+    ModuleContext* mctx = get_context(module_name);
+    if (!mctx) return nullptr;
+    return mctx->get_subcontext_for_domain(domain_name);
+}
+
+void Runtime::register_subcontext(const std::string& hash, SubContext* ctx) {
+    std::lock_guard<std::mutex> lock(mutex());
+    subcontexts_by_hash()[hash] = ctx;
+}
+
+void Runtime::unregister_subcontext(const std::string& hash) {
+    std::lock_guard<std::mutex> lock(mutex());
+    subcontexts_by_hash().erase(hash);
+}
+
+SubContext* Runtime::get_subcontext_by_hash(const std::string& hash) {
+    std::lock_guard<std::mutex> lock(mutex());
+    auto it = subcontexts_by_hash().find(hash);
+    return (it != subcontexts_by_hash().end()) ? it->second : nullptr;
 }
 
 void Runtime::set_active_registry(Registry* reg) {

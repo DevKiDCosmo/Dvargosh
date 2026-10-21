@@ -12,7 +12,7 @@ std::string hello_world(const std::string& input) {
 // Function residing inside the protected "captives:vault" domain
 DVARGOSH_SERVICE(captives:vault)
 std::string get_safe_vault_key() {
-    auto* ctx = Runtime::get_context("hello_world");
+    auto* ctx = Runtime::get_context();
     if (!ctx || !ctx->domain_manager()) return "ERROR_NO_CONTEXT";
 
     // 1. Explicit domain security check: verify caller is neither blacklisted nor unauthorized
@@ -40,7 +40,7 @@ std::string get_safe_vault_key() {
 // Function residing in "captives:intruder" domain trying to breach "captives:vault"
 DVARGOSH_SERVICE(captives:intruder)
 std::string intruder_access_safe_space() {
-    auto* ctx = Runtime::get_context("hello_world");
+    auto* ctx = Runtime::get_context();
     if (!ctx || !ctx->domain_manager()) return "ERROR_NO_CONTEXT";
 
     // Executing domain is automatically resolved as "captives:intruder"
@@ -62,7 +62,7 @@ std::string intruder_access_safe_space() {
 // Intruder attempts to falsify caller domain identity to bypass security
 DVARGOSH_SERVICE(captives:intruder)
 std::string intruder_tamper_attempt() {
-    auto* ctx = Runtime::get_context("hello_world");
+    auto* ctx = Runtime::get_context();
     if (!ctx || !ctx->domain_manager()) return "ERROR_NO_CONTEXT";
 
     // Executing frame is "captives:intruder", but intruder attempts to pass "captives:vault"
@@ -78,7 +78,7 @@ std::string intruder_tamper_attempt() {
 // Function in "captives:intruder" domain trying to invoke a service in "captives:vault"
 DVARGOSH_SERVICE(captives:intruder)
 std::string intruder_invoke_vault() {
-    auto* ctx = Runtime::get_context("hello_world");
+    auto* ctx = Runtime::get_context();
     if (!ctx || !ctx->registry()) return "ERROR_NO_CONTEXT";
 
     // Attempt RPC call from executing domain "captives:intruder" to target "captives:vault"
@@ -93,7 +93,7 @@ std::string intruder_invoke_vault() {
 // 6. Correct cross-module invocation via host context
 DVARGOSH_SERVICE(captives:hello_world)
 std::string invokeothers() {
-    auto* ctx = Runtime::get_context("hello_world");
+    auto* ctx = Runtime::get_context();
     if (!ctx) return "Error: No active module context";
 
     auto hash_res = ctx->call("demo_pkg.demo_pkg_vault_hash", {Value("DvargoshData")});
@@ -101,25 +101,28 @@ std::string invokeothers() {
 }
 
 extern void* just_true();
-DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") { // Next security vulnerability is that every, domain, scope of every module is only in its own module true. Only explicit are allowed.
-    auto* ctx = Runtime::get_context("logger"); // TODO: get_context is not secured
-    // Audit: Using a fake context result in invalid
-    // Using a context from another module will run normally. Here is ownership despair. Or ownsership fraud.
+DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") {
+    // 1. Anti-Hijacking verification:
+    // Attempting to retrieve a foreign module's context returns nullptr due to ExecutionContext authentication
+    auto* foreign_ctx = Runtime::get_context("logger");
+    if (foreign_ctx) {
+        std::cerr << "[SECURITY WARNING] Foreign context hijack succeeded unexpectedly!\n";
+    }
 
-
+    // 2. Resolve authentic ModuleContext for this module using zero-parameter get_context()
+    auto* ctx = Runtime::get_context();
     if (!ctx) return Result<Value>::failure(StatusCode(23), "Error: No active module context");
     
     std::string caller = ExecutionContext::current_domain();
-    if (ctx->domain_manager()->is_cross_domain_blacklisted(caller, "value")) {
+    DomainManager* dm = ctx ? ctx->domain_manager() : nullptr;
+    if (dm && dm->is_cross_domain_blacklisted(caller, "value")) {
         return Result<Value>::failure(StatusCode(24), "Error: Calling domain is explicitly blacklisted");
     }
     
-    auto res = ctx->call("logger.debug", {Value("just_true called")});
-    if (!res.is_ok()) {
-        std::cerr << "Invoke warning/error: " << res.error_message() << std::endl;
+    // Invoke logger.debug using authentic local context (logger.* is an open wildcard)
+    if (ctx) {
+        ctx->call("logger.debug", {Value("just_true called via authentic ModuleContext")});
     }
-
-    ctx->call("logger.debug", {Value(caller + " called just_true")});
 
     std::cout << "just_true called" << std::endl;
     return Result<Value>::success(Value(true));

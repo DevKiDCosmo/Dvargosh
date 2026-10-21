@@ -41,6 +41,14 @@ inline void register_test(const std::string& name, std::function<void()> fn) {
 
 #define ASSERT_FALSE(cond) ASSERT_TRUE(!(cond))
 
+#define ASSERT_NE(a, b) \
+    do { \
+        if ((a) == (b)) { \
+            std::cerr << "Assertion FAILED: (" #a " != " #b ") [" << (a) << " == " << (b) << "] at " << __FILE__ << ":" << __LINE__ << std::endl; \
+            std::exit(1); \
+        } \
+    } while (0)
+
 #define ASSERT_EQ(a, b) \
     do { \
         if (!((a) == (b))) { \
