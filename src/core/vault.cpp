@@ -44,10 +44,18 @@ Vault::Vault(VaultConfig config, std::unique_ptr<SecuredMemorySpace> space)
     : m_config(std::move(config)), m_space(std::move(space)) {}
 
 Vault::~Vault() {
-    if (m_sealed && m_space && m_space->raw_base()) {
-        // Unprotect so destructor can zero-scrub memory safely
+    unload();
+}
+
+void Vault::unload() {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (m_space) {
         apply_hardware_protection(false);
+        m_space->unload();
+        m_space.reset();
     }
+    m_slots.clear();
+    m_sealed = false;
 }
 
 void Vault::apply_hardware_protection(bool read_only) {

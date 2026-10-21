@@ -72,62 +72,56 @@ int main() {
     }
 
     // 4. Invoke Multi-File Auto-Registered Functions (from [[]] / DVARGOSH_EXPORT_FN)
-    std::cout << "\n[Step 4] Invoking Auto-Registered Functions from Non-Monolithic Files...\n";
+    // Registered directly as module.function (old raw name ditched, no domain in name)
+    std::cout << "\n[Step 4] Invoking Auto-Registered Functions (registered as module.function)...\n";
 
-    // Call demo_pkg_vault_hash (from ops_crypto.cpp)
-    auto hash_res = di->registry()->invoke("demo_pkg_vault_hash", {Value("DvargoshData")});
-    std::cout << "  * demo_pkg_vault_hash('DvargoshData') => "
+    // Call demo_pkg.demo_pkg_vault_hash (from ops_crypto.cpp)
+    auto hash_res = di->registry()->invoke("demo_pkg.demo_pkg_vault_hash", {Value("DvargoshData")});
+    std::cout << "  * demo_pkg.demo_pkg_vault_hash('DvargoshData') => "
               << (hash_res.is_ok() ? hash_res.value().to_string() : hash_res.error_message()) << "\n";
     assert(hash_res.is_ok());
 
-    // Call demo_pkg_worker_power (from ops_calc.cpp)
-    auto pow_res = di->registry()->invoke("demo_pkg_worker_power", {Value(2.0), Value(8.0)});
-    std::cout << "  * demo_pkg_worker_power(2, 8) => "
+    // Call demo_pkg.demo_pkg_worker_power (from ops_calc.cpp)
+    auto pow_res = di->registry()->invoke("demo_pkg.demo_pkg_worker_power", {Value(2.0), Value(8.0)});
+    std::cout << "  * demo_pkg.demo_pkg_worker_power(2, 8) => "
               << (pow_res.is_ok() ? pow_res.value().to_string() : pow_res.error_message()) << "\n";
     assert(pow_res.is_ok());
     assert(pow_res.value().as_double() == 256.0);
 
-    // Call accelerator_sha256 (from development_modules/crypto_accelerator/hasher.cpp)
-    auto accel_hash = di->registry()->invoke("accelerator_sha256", {Value("QuantumPayload")});
-    std::cout << "  * accelerator_sha256('QuantumPayload') => "
+    // Call crypto_accelerator.accelerator_sha256 (from development_modules/crypto_accelerator/hasher.cpp)
+    auto accel_hash = di->registry()->invoke("crypto_accelerator.accelerator_sha256", {Value("QuantumPayload")});
+    std::cout << "  * crypto_accelerator.accelerator_sha256('QuantumPayload') => "
               << (accel_hash.is_ok() ? accel_hash.value().to_string() : accel_hash.error_message()) << "\n";
     assert(accel_hash.is_ok());
 
-    // Call accelerator_rot13 (from development_modules/crypto_accelerator/cipher.cpp)
-    auto rot13_res = di->registry()->invoke("accelerator_rot13", {Value("HelloDvargosh")});
-    std::cout << "  * accelerator_rot13('HelloDvargosh') => "
+    // Call crypto_accelerator.accelerator_rot13 (from development_modules/crypto_accelerator/cipher.cpp)
+    auto rot13_res = di->registry()->invoke("crypto_accelerator.accelerator_rot13", {Value("HelloDvargosh")});
+    std::cout << "  * crypto_accelerator.accelerator_rot13('HelloDvargosh') => "
               << (rot13_res.is_ok() ? rot13_res.value().to_string() : rot13_res.error_message()) << "\n";
     assert(rot13_res.is_ok());
 
-    // Call get_safe_vault_key (from development_modules/helloWorld)
-    auto vault_key_res = di->registry()->invoke("get_safe_vault_key");
-    std::cout << "  * get_safe_vault_key() => "
+    // Call hello_world.get_safe_vault_key (from development_modules/helloWorld)
+    auto vault_key_res = di->registry()->invoke("hello_world.get_safe_vault_key");
+    std::cout << "  * hello_world.get_safe_vault_key() => "
               << (vault_key_res.is_ok() ? vault_key_res.value().to_string() : vault_key_res.error_message()) << "\n";
     assert(vault_key_res.is_ok());
     assert(vault_key_res.value().to_string() == "SECURE_KEY_NAM_CAPTIVES_9988_XYZ");
 
-    // Call via alias override (helloworld.captives:vault.get_safe_vault_key)
-    auto alias_res = di->registry()->invoke("helloworld.captives:vault.get_safe_vault_key");
-    std::cout << "  * helloworld.captives:vault.get_safe_vault_key() (alias) => "
-              << (alias_res.is_ok() ? alias_res.value().to_string() : alias_res.error_message()) << "\n";
-    assert(alias_res.is_ok());
-    assert(alias_res.value().to_string() == "SECURE_KEY_NAM_CAPTIVES_9988_XYZ");
-
-    // Call intruder_access_safe_space -> correctly rejected
-    auto breach_res = di->registry()->invoke("intruder_access_safe_space");
-    std::cout << "  * intruder_access_safe_space() => "
+    // Call hello_world.intruder_access_safe_space -> correctly rejected
+    auto breach_res = di->registry()->invoke("hello_world.intruder_access_safe_space");
+    std::cout << "  * hello_world.intruder_access_safe_space() => "
               << (breach_res.is_ok() ? breach_res.value().to_string() : breach_res.error_message()) << "\n";
     assert(breach_res.is_ok());
     assert(breach_res.value().to_string().rfind("REJECTED", 0) == 0);
 
     // Call worker.box_invoke with normal execution
-    auto box_ok = di->registry()->invoke("worker.box_invoke", {Value("accelerator_rot13"), Value("SecretTest"), Value("KILL_TRIGGER")});
-    std::cout << "  * worker.box_invoke(accelerator_rot13, SecretTest) => "
+    auto box_ok = di->registry()->invoke("worker.box_invoke", {Value("crypto_accelerator.accelerator_rot13"), Value("SecretTest"), Value("KILL_TRIGGER")});
+    std::cout << "  * worker.box_invoke(crypto_accelerator.accelerator_rot13, SecretTest) => "
               << (box_ok.is_ok() ? box_ok.value().to_string() : box_ok.error_message()) << "\n";
     assert(box_ok.is_ok());
 
     // Call worker.box_invoke with kill trigger -> terminates process
-    auto box_kill = di->registry()->invoke("worker.box_invoke", {Value("accelerator_rot13"), Value("KILL_TRIGGER"), Value("KILL_TRIGGER")});
+    auto box_kill = di->registry()->invoke("worker.box_invoke", {Value("crypto_accelerator.accelerator_rot13"), Value("KILL_TRIGGER"), Value("KILL_TRIGGER")});
     std::cout << "  * worker.box_invoke with kill trigger => "
               << (box_kill.is_ok() ? box_kill.value().to_string() : box_kill.error_message()) << "\n";
     assert(!box_kill.is_ok());
@@ -135,7 +129,7 @@ int main() {
 
     // 5. Test Handling of Unresolved Functions & Fuzzy Suggestions
     std::cout << "\n[Step 5] Testing Unresolved Function Handling & Suggestions...\n";
-    auto unres_res = di->registry()->invoke("demo_pkg_worker_pow"); // intentional typo for demo_pkg_worker_power
+    auto unres_res = di->registry()->invoke("demo_pkg.demo_pkg_worker_pow"); // intentional typo for demo_pkg.demo_pkg_worker_power
     if (!unres_res.is_ok() && unres_res.status() == StatusCode::SymbolNotFound) {
         std::cout << "  ✓ Caught unresolved function: " << unres_res.error_message() << "\n";
     }

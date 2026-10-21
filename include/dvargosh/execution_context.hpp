@@ -13,6 +13,7 @@ struct CallFrame {
     std::string caller_module;
     std::string caller_domain;
     bool is_system = false;
+    std::string token;
 };
 
 /**
@@ -29,6 +30,12 @@ public:
     static std::string caller_domain();
     static std::string caller_module();
     static bool is_system();
+
+    /**
+     * @brief Cryptographically validates that thread-local frames have not been tampered with or modified in memory.
+     * @return Result<void>::success() if authentic, StatusCode::SecurityTampering if corrupted.
+     */
+    static Result<void> validate_stack_integrity();
 
     /**
      * @brief Verifies that claimed_domain matches the real currently executing domain.

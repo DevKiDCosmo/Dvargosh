@@ -62,6 +62,15 @@ void ModuleLoader::add_search_path(const std::string& path) {
     m_search_paths.push_back(path);
 }
 
+#ifndef RTLD_NODELETE
+#define RTLD_NODELETE 0
+#endif
+
+AutoFunctionRegistry& AutoFunctionRegistry::instance() {
+    static AutoFunctionRegistry s_inst;
+    return s_inst;
+}
+
 std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<DiscoveredModuleInfo> result;
@@ -86,7 +95,7 @@ std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
             std::string full_path = dir_path + "/" + filename;
 
             // Inspect dynamic library header symbols without executing module code
-            void* handle = dlopen(full_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
+            void* handle = dlopen(full_path.c_str(), RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
             if (!handle) continue;
 
             auto magic_fn = reinterpret_cast<ModuleMagicFn>(dlsym(handle, "dvargosh_module_magic"));

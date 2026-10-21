@@ -104,6 +104,11 @@ public:
      */
     void scrub();
 
+    /**
+     * @brief Explicitly unloads, sanitizes, and releases the secured memory space and hardware guard pages.
+     */
+    void unload();
+
 private:
     explicit SecuredMemorySpace(const SecuredMemoryConfig& config);
     Result<void> initialize();

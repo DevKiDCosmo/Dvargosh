@@ -48,7 +48,7 @@ WORKDIR /app
 COPY --from=builder /workspace/dist/ /app/
 
 ENV PATH="/app/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/app/modules:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/app/modules"
 
 # Default command runs automated verification demonstration
 CMD ["/app/bin/dvargosh", "--modules", "/app/modules"]

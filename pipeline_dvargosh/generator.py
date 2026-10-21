@@ -156,14 +156,9 @@ def generate_registration_cpp(folder: Path, annotated_fns):
 
         lines.append("}")
 
-        # DVARGOSH_EXPORT_ALIAS_OVERRIDE:
-        # If domain is not * then alias is module.domain.function, else module.function
-        dom = fn["domain"]
-        if dom == "*" or not dom:
-            alias = f"{mod_name}.{fn['function']}"
-        else:
-            alias = f"{mod_name}.{dom}.{fn['function']}"
-
+        # The alias (module.function) is the thing that the service is registered as.
+        # The domain is omitted from the alias name for clean concise naming.
+        alias = f"{mod_name}.{fn['function']}"
         lines.append(f"DVARGOSH_EXPORT_ALIAS_OVERRIDE({fn['function']}, \"{alias}\");\n")
 
     lines.append("} // namespace dvargosh\n")
@@ -274,11 +269,12 @@ def generate_typed_interfaces(all_modules):
         for fn in m["exported_functions"]:
             fn_name = fn["function"]
             desc = fn["description"]
+            svc_target = f"{mod_name}.{fn_name}"
 
             if "power" in fn_name or "calc" in fn_name:
                 lines.append(f"    /** @brief {desc} */")
                 lines.append(f"    static double {fn_name}(dvargosh::Registry& reg, double a, double b) {{")
-                lines.append(f"        auto res = reg.invoke(\"{fn_name}\", {{dvargosh::Value(a), dvargosh::Value(b)}});")
+                lines.append(f"        auto res = reg.invoke(\"{svc_target}\", {{dvargosh::Value(a), dvargosh::Value(b)}});")
                 lines.append("        if (!res.is_ok()) throw std::runtime_error(\"Dvargosh RPC Error: \" + res.error_message());")
                 lines.append("        return res.value().as_double();")
                 lines.append("    }")
@@ -288,7 +284,7 @@ def generate_typed_interfaces(all_modules):
             elif not fn.get("params") or fn["params"].strip() == "":
                 lines.append(f"    /** @brief {desc} */")
                 lines.append(f"    static std::string {fn_name}(dvargosh::Registry& reg) {{")
-                lines.append(f"        auto res = reg.invoke(\"{fn_name}\", {{}});")
+                lines.append(f"        auto res = reg.invoke(\"{svc_target}\", {{}});")
                 lines.append("        if (!res.is_ok()) throw std::runtime_error(\"Dvargosh RPC Error: \" + res.error_message());")
                 lines.append("        return res.value().to_string();")
                 lines.append("    }")
@@ -298,7 +294,7 @@ def generate_typed_interfaces(all_modules):
             else:
                 lines.append(f"    /** @brief {desc} */")
                 lines.append(f"    static std::string {fn_name}(dvargosh::Registry& reg, const std::string& input) {{")
-                lines.append(f"        auto res = reg.invoke(\"{fn_name}\", {{dvargosh::Value(input)}});")
+                lines.append(f"        auto res = reg.invoke(\"{svc_target}\", {{dvargosh::Value(input)}});")
                 lines.append("        if (!res.is_ok()) throw std::runtime_error(\"Dvargosh RPC Error: \" + res.error_message());")
                 lines.append("        return res.value().to_string();")
                 lines.append("    }")
@@ -376,17 +372,18 @@ def generate_typed_interfaces(all_modules):
         bind_lines.append("        Binder b;")
         for fn in m["exported_functions"]:
             fn_name = fn["function"]
+            svc_target = f"{mod_name}.{fn_name}"
             if "power" in fn_name or "calc" in fn_name:
-                bind_lines.append(f"        if (mapper.has_service(\"{fn_name}\")) {{")
-                bind_lines.append(f"            b.{fn_name} = mapper.bind<double, double, double>(\"{fn_name}\");")
+                bind_lines.append(f"        if (mapper.has_service(\"{svc_target}\")) {{")
+                bind_lines.append(f"            b.{fn_name} = mapper.bind<double, double, double>(\"{svc_target}\");")
                 bind_lines.append("        }")
             elif not fn.get("params") or fn["params"].strip() == "":
-                bind_lines.append(f"        if (mapper.has_service(\"{fn_name}\")) {{")
-                bind_lines.append(f"            b.{fn_name} = mapper.bind<std::string>(\"{fn_name}\");")
+                bind_lines.append(f"        if (mapper.has_service(\"{svc_target}\")) {{")
+                bind_lines.append(f"            b.{fn_name} = mapper.bind<std::string>(\"{svc_target}\");")
                 bind_lines.append("        }")
             else:
-                bind_lines.append(f"        if (mapper.has_service(\"{fn_name}\")) {{")
-                bind_lines.append(f"            b.{fn_name} = mapper.bind<std::string, const std::string&>(\"{fn_name}\");")
+                bind_lines.append(f"        if (mapper.has_service(\"{svc_target}\")) {{")
+                bind_lines.append(f"            b.{fn_name} = mapper.bind<std::string, const std::string&>(\"{svc_target}\");")
                 bind_lines.append("        }")
         bind_lines.append("        return b;")
         bind_lines.append("    }")
@@ -527,11 +524,11 @@ int main() {
     // 4. Test C++ AutoMapper: Bind dynamic RPC method to standard std::function
     std::cout << "\\n[Pipeline App] Testing C++ AutoMapper Reflection & Binding...\\n";
     AutoMapper mapper(di);
-    assert(mapper.has_service("demo_pkg_vault_hash"));
-    std::cout << "  * AutoMapper: Found domain for 'demo_pkg_vault_hash': "
-              << mapper.find_domain_for_service("demo_pkg_vault_hash") << "\\n";
+    assert(mapper.has_service("demo_pkg.demo_pkg_vault_hash"));
+    std::cout << "  * AutoMapper: Found domain for 'demo_pkg.demo_pkg_vault_hash': "
+              << mapper.find_domain_for_service("demo_pkg.demo_pkg_vault_hash") << "\\n";
 
-    auto bound_hash = mapper.bind<std::string, const std::string&>("demo_pkg_vault_hash");
+    auto bound_hash = mapper.bind<std::string, const std::string&>("demo_pkg.demo_pkg_vault_hash");
     std::string mapper_out = bound_hash("BoundViaAutoMapper");
     std::cout << "  * AutoMapper::bind callable result -> " << mapper_out << "\\n";
     assert(!mapper_out.empty());
@@ -574,14 +571,33 @@ def generate_cmake_file(modules, output_file: Path, output_subdir: str):
         target_name = f"mod_{m['folder_name']}"
         source_paths = []
         for src in m["sources"]:
-            source_paths.append(str(m["dir"] / src))
+            full_src = m["dir"] / src
+            try:
+                rel = full_src.relative_to(ROOT_DIR)
+                source_paths.append(f"${{CMAKE_CURRENT_SOURCE_DIR}}/{rel}")
+            except ValueError:
+                try:
+                    rel = full_src.relative_to(BUILD_DIR)
+                    source_paths.append(f"${{CMAKE_BINARY_DIR}}/{rel}")
+                except ValueError:
+                    source_paths.append(str(full_src))
         sources_str = " ".join(source_paths)
         links_str = " ".join(m["link_libraries"])
+
+        try:
+            rel_inc = m["dir"].relative_to(ROOT_DIR)
+            inc_dir = f"${{CMAKE_CURRENT_SOURCE_DIR}}/{rel_inc}"
+        except ValueError:
+            try:
+                rel_inc = m["dir"].relative_to(BUILD_DIR)
+                inc_dir = f"${{CMAKE_BINARY_DIR}}/{rel_inc}"
+            except ValueError:
+                inc_dir = str(m["dir"])
 
         lines.append(f"# Module: {m['name']} (Domains: {', '.join(m['domains'])})")
         lines.append(f"add_library({target_name} SHARED {sources_str})")
         lines.append(f"target_link_libraries({target_name} PRIVATE {links_str})")
-        lines.append(f"target_include_directories({target_name} PRIVATE include {m['dir']} ${{CMAKE_BINARY_DIR}}/generated/include)")
+        lines.append(f"target_include_directories({target_name} PRIVATE include {inc_dir} ${{CMAKE_BINARY_DIR}}/generated/include)")
         lines.append(f"set_target_properties({target_name} PROPERTIES")
         lines.append(f"    PREFIX \"lib\"")
         lines.append(f"    LIBRARY_OUTPUT_DIRECTORY ${{CMAKE_BINARY_DIR}}/{output_subdir}")

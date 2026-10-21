@@ -41,8 +41,15 @@ public:
 
     void allow_access_to(const std::string& target_domain);
     void revoke_access_to(const std::string& target_domain);
+    void blacklist_domain(const std::string& target_domain);
+    void unblacklist_domain(const std::string& target_domain);
+    bool is_domain_blacklisted(const std::string& target_domain) const;
     bool can_access_domain(const std::string& target_domain) const;
     const std::unordered_set<std::string>& allowed_targets() const noexcept { return m_allowed_targets; }
+    const std::unordered_set<std::string>& blacklisted_targets() const noexcept { return m_blacklisted_targets; }
+
+    Result<void> unload_secured_space();
+    Result<void> unload_vaults();
 
     void add_module(const std::string& mod_name);
     void remove_module(const std::string& mod_name);
@@ -62,6 +69,7 @@ private:
     SecurityPolicy m_policy;
     std::unique_ptr<SecuredMemorySpace> m_secured_space;
     std::unordered_set<std::string> m_allowed_targets;
+    std::unordered_set<std::string> m_blacklisted_targets;
     std::vector<std::string> m_modules;
     std::vector<std::string> m_services;
     std::unordered_map<std::string, std::shared_ptr<Vault>> m_vaults;
@@ -90,7 +98,13 @@ public:
     bool has_domain(const std::string& domain_name) const;
 
     Result<void> allow_cross_domain(const std::string& from_domain, const std::string& to_domain);
+    Result<void> blacklist_domain(const std::string& from_domain, const std::string& to_domain);
+    Result<void> unblacklist_domain(const std::string& from_domain, const std::string& to_domain);
+    bool is_cross_domain_blacklisted(const std::string& from_domain, const std::string& to_domain) const;
     bool check_cross_domain_access(const std::string& from_domain, const std::string& to_domain) const;
+
+    Result<void> unload_domain_space(const std::string& domain_name);
+    Result<void> unload_domain_vaults(const std::string& domain_name);
 
     SecuredMemorySpace* get_domain_space(const std::string& domain_name);
     Result<SecuredMemorySpace*> get_domain_space(const std::string& domain_name, const std::string& caller_domain);

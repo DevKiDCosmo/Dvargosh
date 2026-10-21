@@ -16,6 +16,8 @@ std::string get_safe_vault_key() {
     auto* ctx = Runtime::get_context("hello_world");
     if (!ctx || !ctx->domain_manager()) return "ERROR_NO_CONTEXT";
 
+    // TODO: Check if the calling domain is in allowed list or on blacklist.
+
     // Authorized access: caller domain is automatically resolved as "captives:vault"
     auto vault_res = ctx->domain_manager()->get_domain_vault("captives:vault", "captives_vault");
     if (!vault_res.is_ok()) {
@@ -76,7 +78,7 @@ std::string intruder_invoke_vault() {
     if (!ctx || !ctx->registry()) return "ERROR_NO_CONTEXT";
 
     // Attempt RPC call from executing domain "captives:intruder" to target "captives:vault"
-    auto res = ctx->call("get_safe_vault_key", {});
+    auto res = ctx->call("hello_world.get_safe_vault_key", {});
     if (!res.is_ok()) {
         return "REJECTED: " + res.error_message();
     }
@@ -90,7 +92,7 @@ std::string invokeothers() {
     auto* ctx = Runtime::get_context("hello_world");
     if (!ctx) return "Error: No active module context";
 
-    auto hash_res = ctx->call("demo_pkg_vault_hash", {Value("DvargoshData")});
+    auto hash_res = ctx->call("demo_pkg.demo_pkg_vault_hash", {Value("DvargoshData")});
     return hash_res.is_ok() ? hash_res.value().to_string() : "Error: " + hash_res.error_message();
 }
 

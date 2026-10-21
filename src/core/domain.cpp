@@ -32,10 +32,42 @@ void Domain::revoke_access_to(const std::string& target_domain) {
     }
 }
 
+void Domain::blacklist_domain(const std::string& target_domain) {
+    m_blacklisted_targets.insert(target_domain);
+}
+
+void Domain::unblacklist_domain(const std::string& target_domain) {
+    m_blacklisted_targets.erase(target_domain);
+}
+
+bool Domain::is_domain_blacklisted(const std::string& target_domain) const {
+    if (m_blacklisted_targets.find("*") != m_blacklisted_targets.end()) return true;
+    return m_blacklisted_targets.find(target_domain) != m_blacklisted_targets.end();
+}
+
 bool Domain::can_access_domain(const std::string& target_domain) const {
+    if (is_domain_blacklisted(target_domain)) return false;
     if (target_domain.empty() || target_domain == m_name) return true;
     if (m_allowed_targets.find("*") != m_allowed_targets.end()) return true;
     return m_allowed_targets.find(target_domain) != m_allowed_targets.end();
+}
+
+Result<void> Domain::unload_secured_space() {
+    if (m_secured_space) {
+        m_secured_space->unload();
+        m_secured_space.reset();
+    }
+    return Result<void>::success();
+}
+
+Result<void> Domain::unload_vaults() {
+    for (auto& [_, vault] : m_vaults) {
+        if (vault) {
+            vault->unload();
+        }
+    }
+    m_vaults.clear();
+    return Result<void>::success();
 }
 
 void Domain::add_module(const std::string& mod_name) {
@@ -151,12 +183,59 @@ Result<void> DomainManager::allow_cross_domain(const std::string& from_domain, c
     return Result<void>::success();
 }
 
+Result<void> DomainManager::blacklist_domain(const std::string& from_domain, const std::string& to_domain) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_domains.find(from_domain);
+    if (it == m_domains.end()) {
+        auto domain = std::make_unique<Domain>(from_domain, SecurityPolicy::standard(), nullptr);
+        domain->blacklist_domain(to_domain);
+        m_domains[from_domain] = std::move(domain);
+        return Result<void>::success();
+    }
+    it->second->blacklist_domain(to_domain);
+    return Result<void>::success();
+}
+
+Result<void> DomainManager::unblacklist_domain(const std::string& from_domain, const std::string& to_domain) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_domains.find(from_domain);
+    if (it != m_domains.end()) {
+        it->second->unblacklist_domain(to_domain);
+    }
+    return Result<void>::success();
+}
+
+bool DomainManager::is_cross_domain_blacklisted(const std::string& from_domain, const std::string& to_domain) const {
+    if (from_domain.empty() || to_domain.empty()) return false;
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_domains.find(from_domain);
+    return it != m_domains.end() && it->second->is_domain_blacklisted(to_domain);
+}
+
 bool DomainManager::check_cross_domain_access(const std::string& from_domain, const std::string& to_domain) const {
-    if (from_domain.empty() || to_domain.empty() || from_domain == to_domain) return true;
+    if (from_domain.empty() || to_domain.empty()) return true;
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_domains.find(from_domain);
     if (it == m_domains.end()) return false;
     return it->second->can_access_domain(to_domain);
+}
+
+Result<void> DomainManager::unload_domain_space(const std::string& domain_name) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_domains.find(domain_name);
+    if (it == m_domains.end()) {
+        return Result<void>::failure(StatusCode::NotFound, "Domain '" + domain_name + "' not found");
+    }
+    return it->second->unload_secured_space();
+}
+
+Result<void> DomainManager::unload_domain_vaults(const std::string& domain_name) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_domains.find(domain_name);
+    if (it == m_domains.end()) {
+        return Result<void>::failure(StatusCode::NotFound, "Domain '" + domain_name + "' not found");
+    }
+    return it->second->unload_vaults();
 }
 
 SecuredMemorySpace* DomainManager::get_domain_space(const std::string& domain_name) {
@@ -319,6 +398,9 @@ Result<size_t> DomainManager::unplug_domain(const std::string& domain_name, Modu
             for (const auto& mod : modules_to_unload) {
                 it->second->remove_module(mod);
             }
+            // Explicitly unload safe pages, secured memory spaces, and vaults upon domain unplug
+            it->second->unload_secured_space();
+            it->second->unload_vaults();
         }
     }
 

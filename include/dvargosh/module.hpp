@@ -42,10 +42,7 @@ struct AutoAliasEntry {
 
 class AutoFunctionRegistry {
 public:
-    static AutoFunctionRegistry& instance() {
-        static AutoFunctionRegistry s_inst;
-        return s_inst;
-    }
+    static AutoFunctionRegistry& instance();
 
     void add(AutoFunctionEntry entry) {
         m_entries.push_back(std::move(entry));
@@ -107,16 +104,34 @@ public:
     virtual Result<void> on_unload(ModuleContext& ctx) = 0;
 
     // Helper to register all functions declared across non-monolithic files via DVARGOSH_EXPORT_FN
+    // The alias (module.function) is the thing that the service is registered as. The old un-prefixed name is ditched.
     void register_auto_functions(ModuleContext& ctx) {
-        const auto& entries = AutoFunctionRegistry::instance().entries();
+        auto& registry = AutoFunctionRegistry::instance();
+        const auto& entries = registry.entries();
+        const auto& aliases = registry.aliases();
+
+        std::unordered_map<std::string, std::string> alias_map;
+        for (const auto& al : aliases) {
+            alias_map[al.target_name] = al.alias_override;
+        }
+
         for (const auto& entry : entries) {
             std::string dom = entry.domain.empty() ? manifest().domain : entry.domain;
-            // Scoped wildcard domain resolution
             if (dom == "*") {
                 dom = manifest().name + ".*";
             }
+
+            // The alias (module.function) is the registered name. Old name is ditched.
+            std::string registered_name;
+            auto it = alias_map.find(entry.name);
+            if (it != alias_map.end()) {
+                registered_name = it->second;
+            } else {
+                registered_name = manifest().name + "." + entry.name;
+            }
+
             ctx.registry()->register_method(
-                entry.name,
+                registered_name,
                 entry.description,
                 manifest().name,
                 dom,
@@ -125,11 +140,8 @@ public:
             );
         }
 
-        // Register alias overrides (e.g. module.domain.function or module.function)
-        const auto& aliases = AutoFunctionRegistry::instance().aliases();
-        for (const auto& al : aliases) {
-            ctx.registry()->register_alias(al.alias_override, al.target_name);
-        }
+        // Clean registry state after registration for modular isolation
+        registry.clear();
     }
 };
 

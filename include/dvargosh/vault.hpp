@@ -95,6 +95,11 @@ public:
     Result<void> unseal();
 
     /**
+     * @brief Unloads, sanitizes, and frees the vault's safe memory pages and cryptographic slots.
+     */
+    void unload();
+
+    /**
      * @brief Safely writes a secret into the hardware-guarded vault.
      * Verifies that the currently executing domain matches owner_domain.
      * Computes SHA-256 checksum and auto-seals if configured.
