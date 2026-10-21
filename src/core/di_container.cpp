@@ -1,4 +1,5 @@
 #include "dvargosh/di_container.hpp"
+#include "dvargosh/execution_context.hpp"
 #include <iostream>
 
 namespace dvargosh {
@@ -71,6 +72,14 @@ SecuredMemorySpace* ModuleContext::domain_space() noexcept {
         return m_domain_mgr->get_domain_space(m_domain_name);
     }
     return nullptr;
+}
+
+void* ModuleContext::allocate_command_memory(size_t size, size_t alignment) {
+    return ExecutionContext::allocate_command_memory(size, alignment);
+}
+
+CommandMemory* ModuleContext::command_memory() noexcept {
+    return ExecutionContext::current_command_memory();
 }
 
 DIContainer::DIContainer()

@@ -111,9 +111,9 @@ Located in `#include "dvargosh/domain.hpp"`:
 
 ---
 
-### Execution Context & Anti-Spoofing Stack
+### Execution Context, Anti-Spoofing & Command Memory Stack
 
-Located in `#include "dvargosh/execution_context.hpp"`:
+Located in `#include "dvargosh/execution_context.hpp"` and `#include "dvargosh/command_memory.hpp"`:
 
 * `ExecutionContext::current_domain() -> std::string`  
   Returns the active domain of the currently executing stack frame. If no frame is active, returns `"system"`. If tampering is detected, returns `"__COMPROMISED__"`.
@@ -125,6 +125,14 @@ Located in `#include "dvargosh/execution_context.hpp"`:
   Returns the immediate upstream caller module.
 * `ExecutionContext::is_system() -> bool`  
   Returns `true` if running in unrestricted administrative system context.
+* `ExecutionContext::allocate_command_memory(size, alignment) -> void*`  
+  Allocates scratchpad memory within the active command's execution frame. All memory is automatically volatile-scrubbed and unmapped upon command completion.
+* `ExecutionContext::current_command_memory() -> CommandMemory*`  
+  Retrieves a pointer to the active command's memory container.
+* `ExecutionContext::command_memory_used() -> size_t`  
+  Returns the number of scratchpad bytes allocated by the current command.
+* `ExecutionContext::command_memory_capacity() -> size_t`  
+  Returns the capacity limit of the current command's memory page.
 * `ExecutionContext::validate_stack_integrity() -> Result<void>`  
   Verifies the cryptographic HMAC-SHA256 signature of every call frame on the thread-local call stack. Detects internal memory mutations and pointer tampering.
 * `ExecutionContext::frame_depth() -> size_t`  
@@ -132,12 +140,30 @@ Located in `#include "dvargosh/execution_context.hpp"`:
 
 ---
 
-### Cryptographic Hardware-Guarded Vaults
+### Cryptographic Hardware-Guarded Vaults & Binary Memory
 
 Located in `#include "dvargosh/vault.hpp"`:
 
 * `vault->write_secret(key, value) -> Result<void>`  
   Temporarily unprotects the memory page (`PROT_READ | PROT_WRITE`), writes the secret, recalculates cryptographic hash, and automatically seals the page (`PROT_READ`). Non-owner domains are rejected immediately.
+* `vault->write_memory(key, data_ptr, size) -> Result<void>`  
+  Writes an arbitrary binary memory buffer into the hardware-guarded vault memory pool.
+* `vault->read_secret(key) -> Result<std::string>`  
+  Validates caller ownership or cross-domain permissions, verifies checksum integrity, and returns the secret string.
+* `vault->read_memory(key) -> Result<std::vector<uint8_t>>`  
+  Validates caller domain permissions, verifies checksum integrity, and returns the raw binary memory buffer.
+* `vault->wipe_secret(key) -> Result<void>`  
+  Securely volatile-zeros the memory slot of a specific key inside the vault without affecting other slots.
+* `vault->memory_stats() -> VaultMemoryStats`  
+  Returns detailed memory telemetry (capacity, used bytes, remaining bytes, slot count, sealing status, and guard pages).
+* `vault->list_slots() -> std::vector<VaultSlotInfo>`  
+  Returns the table of stored memory slots (key, offset, size, checksum, and wiped status).
+* `vault->seal() -> Result<void>`  
+  Applies hardware-level read-only protection (`PROT_READ`) via `mprotect`.
+* `vault->unseal() -> Result<void>`  
+  Restores write access (`PROT_READ | PROT_WRITE`) if the caller is authorized.
+* `vault->unload()`  
+  Wipes all secret entries, zeros the memory pool, and deallocates the underlying hardware space.
 * `vault->read_secret(key) -> Result<std::string>`  
   Validates caller ownership or cross-domain permissions, verifies checksum integrity, and returns the secret.
 * `vault->seal() -> Result<void>`  
@@ -566,3 +592,38 @@ void SecuredMemorySpace::unload() {
 ```
 
 With this change, all 30/30 unit tests, app loader integration tests, pipeline apps, and Docker containers execute in milliseconds with 100% pass rate.
+
+---
+
+## 8. Interactive CLI: Memory & Vault Commands
+
+The interactive console provides comprehensive commands to monitor, audit, and manipulate domain secured memory spaces and cryptographic vaults live.
+
+### Memory Commands
+* `memory status` (or `memory`):  
+  Prints a system-wide memory report showing all domains, memory capacities, used bytes, and active vaults.
+* `memory domain <domain_name>`:  
+  Displays detailed memory allocation stats (capacity, used bytes, remaining bytes, raw base pointer) for a specific domain.
+* `memory scrub <domain_name>`:  
+  Executes a hardware volatile zeroing scrub across the entire secured space of the domain.
+* `memory reset <domain_name>`:  
+  Resets the allocation offset to 0 and scrubs active memory in the domain.
+
+### Vault Commands
+* `vaults`:  
+  Lists all active vaults across all domains, their owner module/domain, capacity, used memory, slot count, and hardware-sealing status.
+* `vault info <domain> <vault_name>`:  
+  Displays full technical telemetry for the vault, including security level, guard pages, remaining capacity, and individual stored memory slots with offsets and SHA-256 checksums.
+* `vault read <domain> <vault_name> <key>`:  
+  Reads a secret value after verifying caller permissions and cryptographic integrity.
+* `vault write <domain> <vault_name> <key> <value>`:  
+  Writes a secret into the vault with automatic hardware page sealing.
+* `vault wipe <domain> <vault_name> <key>`:  
+  Volatile-zeros the memory slot occupied by `<key>`, removing it securely without affecting other stored secrets.
+* `vault seal <domain> <vault_name>`:  
+  Applies hardware-level write protection (`mprotect(PROT_READ)`) to the vault memory pages.
+* `vault unseal <domain> <vault_name>`:  
+  Temporarily restores write access for authorized owner modifications.
+* `vault verify <domain> <vault_name>`:  
+  Runs a cryptographic checksum verification pass across all stored slots to detect any in-memory bit rot or tampering.
+

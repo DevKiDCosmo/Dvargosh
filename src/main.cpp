@@ -238,6 +238,9 @@ int main(int argc, char** argv) {
                       << "  load_domain <domain>         - Load all modules in domain\n"
                       << "  unload_domain <domain>       - Unload all modules in domain\n"
                       << "  invoke <method> [args...]    - Dynamically invoke RPC method\n"
+                      << "  memory [status|domain|scrub] - Display or manage domain and vault memory\n"
+                      << "  vaults                       - List all active cryptographic vaults\n"
+                      << "  vault <subcmd> [args...]     - Inspect or operate on a vault (info, read, write, wipe, seal, unseal, verify)\n"
                       << "  domains                      - Display domain registry & memory\n"
                       << "  catalog                      - Display module catalog\n"
                       << "  services                     - List services & dynamic methods\n"
@@ -316,6 +319,178 @@ int main(int argc, char** argv) {
             else std::cerr << "Failed: " << res.error_message() << "\n";
         } else if (cmd == "domains") {
             di->domain_manager()->dump_report();
+        } else if (cmd == "memory") {
+            std::string subcmd;
+            iss >> subcmd;
+            if (subcmd.empty() || subcmd == "status") {
+                di->domain_manager()->dump_memory_report();
+            } else if (subcmd == "domain") {
+                std::string dom;
+                iss >> dom;
+                auto* space = di->domain_manager()->get_domain_space(dom);
+                if (space) {
+                    std::cout << "Domain '" << dom << "' Memory Space:\n"
+                              << "  Capacity:  " << (space->capacity() / 1024) << " KB (" << space->capacity() << " bytes)\n"
+                              << "  Used:      " << space->used_bytes() << " bytes\n"
+                              << "  Remaining: " << space->remaining_bytes() << " bytes\n"
+                              << "  Base:      " << space->raw_base() << "\n";
+                } else {
+                    std::cerr << "Domain '" << dom << "' has no active secured memory space.\n";
+                }
+            } else if (subcmd == "scrub") {
+                std::string dom;
+                iss >> dom;
+                auto* space = di->domain_manager()->get_domain_space(dom);
+                if (space) {
+                    space->scrub();
+                    std::cout << "Scrubbed and volatile-zeroed secured memory space for domain '" << dom << "'.\n";
+                } else {
+                    std::cerr << "Domain '" << dom << "' not found or has no memory space.\n";
+                }
+            } else if (subcmd == "reset") {
+                std::string dom;
+                iss >> dom;
+                auto* space = di->domain_manager()->get_domain_space(dom);
+                if (space) {
+                    space->reset();
+                    std::cout << "Reset secured memory space for domain '" << dom << "' (offset rewound to 0).\n";
+                } else {
+                    std::cerr << "Domain '" << dom << "' not found or has no memory space.\n";
+                }
+            } else {
+                std::cout << "Usage: memory [status | domain <name> | scrub <name> | reset <name>]\n";
+            }
+        } else if (cmd == "vaults") {
+            auto vaults = di->domain_manager()->list_all_vaults();
+            std::cout << "\n┌────────────────────────────────────────────────────────────────────────────────────────┐\n";
+            std::cout << "│                               DVARGOSH VAULTS REGISTRY                                 │\n";
+            std::cout << "├──────────────────┬──────────────────┬──────────────┬──────────────┬───────┬────────────┤\n";
+            std::cout << "│ Vault Name       │ Owner Domain     │ Capacity     │ Used Memory  │ Slots │ Sealed     │\n";
+            std::cout << "├──────────────────┼──────────────────┼──────────────┼──────────────┼───────┼────────────┤\n";
+            for (const auto& v : vaults) {
+                auto st = v->memory_stats();
+                std::string cap_str = std::to_string(st.capacity_bytes / 1024) + " KB";
+                std::string used_str = std::to_string(st.used_bytes) + " B";
+                std::string sealed_str = st.is_sealed ? "YES (PROT)" : "NO";
+
+                std::cout << "│ " << st.name;
+                for (size_t i = st.name.length(); i < 16; ++i) std::cout << " ";
+                std::cout << " │ " << st.owner_domain;
+                for (size_t i = st.owner_domain.length(); i < 16; ++i) std::cout << " ";
+                std::cout << " │ " << cap_str;
+                for (size_t i = cap_str.length(); i < 12; ++i) std::cout << " ";
+                std::cout << " │ " << used_str;
+                for (size_t i = used_str.length(); i < 12; ++i) std::cout << " ";
+                std::cout << " │ " << st.slot_count;
+                for (size_t i = std::to_string(st.slot_count).length(); i < 5; ++i) std::cout << " ";
+                std::cout << " │ " << sealed_str;
+                for (size_t i = sealed_str.length(); i < 10; ++i) std::cout << " ";
+                std::cout << " │\n";
+            }
+            std::cout << "└──────────────────┴──────────────────┴──────────────┴──────────────┴───────┴────────────┘\n\n";
+        } else if (cmd == "vault") {
+            std::string subcmd;
+            iss >> subcmd;
+            if (subcmd == "info") {
+                std::string dom, vname;
+                iss >> dom >> vname;
+                auto v_res = di->domain_manager()->get_domain_vault(dom, vname);
+                if (v_res.is_ok()) {
+                    auto st = v_res.value()->memory_stats();
+                    std::cout << "Vault '" << st.name << "' in Domain '" << st.owner_domain << "':\n"
+                              << "  Owner Module:   " << st.owner_module << "\n"
+                              << "  Security Level: " << vault_security_level_to_string(st.security_level) << "\n"
+                              << "  Capacity:       " << (st.capacity_bytes / 1024) << " KB (" << st.capacity_bytes << " bytes)\n"
+                              << "  Used Memory:    " << st.used_bytes << " bytes\n"
+                              << "  Remaining:      " << st.remaining_bytes << " bytes\n"
+                              << "  Active Slots:   " << st.slot_count << "\n"
+                              << "  Sealed:         " << (st.is_sealed ? "YES (Hardware PROT_READ)" : "NO") << "\n"
+                              << "  Guard Pages:    " << (st.guard_pages_enabled ? "YES (PROT_NONE)" : "NO") << "\n";
+                    auto slots = v_res.value()->list_slots();
+                    if (!slots.empty()) {
+                        std::cout << "  Stored Slots:\n";
+                        for (const auto& sl : slots) {
+                            std::cout << "    * " << sl.key << " [offset=" << sl.offset
+                                      << ", size=" << sl.size << " bytes, checksum="
+                                      << (sl.checksum.empty() ? "(none)" : sl.checksum.substr(0, 16) + "...")
+                                      << (sl.is_wiped ? " (WIPED)" : "") << "]\n";
+                        }
+                    }
+                } else {
+                    std::cerr << "Vault error: " << v_res.error_message() << "\n";
+                }
+            } else if (subcmd == "read") {
+                std::string dom, vname, key;
+                iss >> dom >> vname >> key;
+                auto v_res = di->domain_manager()->get_domain_vault(dom, vname);
+                if (v_res.is_ok()) {
+                    auto s_res = v_res.value()->read_secret(key);
+                    if (s_res.is_ok()) std::cout << "=> " << s_res.value() << "\n";
+                    else std::cerr << "Read failed: " << s_res.error_message() << "\n";
+                } else {
+                    std::cerr << "Vault error: " << v_res.error_message() << "\n";
+                }
+            } else if (subcmd == "write") {
+                std::string dom, vname, key, val;
+                iss >> dom >> vname >> key >> val;
+                auto v_res = di->domain_manager()->get_domain_vault(dom, vname);
+                if (v_res.is_ok()) {
+                    auto w_res = v_res.value()->write_secret(key, val);
+                    if (w_res.is_ok()) std::cout << "Successfully written secret '" << key << "' into vault '" << vname << "'.\n";
+                    else std::cerr << "Write failed: " << w_res.error_message() << "\n";
+                } else {
+                    std::cerr << "Vault error: " << v_res.error_message() << "\n";
+                }
+            } else if (subcmd == "wipe") {
+                std::string dom, vname, key;
+                iss >> dom >> vname >> key;
+                auto v_res = di->domain_manager()->get_domain_vault(dom, vname);
+                if (v_res.is_ok()) {
+                    auto wp_res = v_res.value()->wipe_secret(key);
+                    if (wp_res.is_ok()) std::cout << "Wiped memory slot for '" << key << "'.\n";
+                    else std::cerr << "Wipe failed: " << wp_res.error_message() << "\n";
+                } else {
+                    std::cerr << "Vault error: " << v_res.error_message() << "\n";
+                }
+            } else if (subcmd == "seal") {
+                std::string dom, vname;
+                iss >> dom >> vname;
+                auto v_res = di->domain_manager()->get_domain_vault(dom, vname);
+                if (v_res.is_ok()) {
+                    auto sl_res = v_res.value()->seal();
+                    if (sl_res.is_ok()) std::cout << "Vault '" << vname << "' hardware-sealed (PROT_READ).\n";
+                    else std::cerr << "Seal failed: " << sl_res.error_message() << "\n";
+                } else {
+                    std::cerr << "Vault error: " << v_res.error_message() << "\n";
+                }
+            } else if (subcmd == "unseal") {
+                std::string dom, vname;
+                iss >> dom >> vname;
+                auto v_res = di->domain_manager()->get_domain_vault(dom, vname);
+                if (v_res.is_ok()) {
+                    auto unsl_res = v_res.value()->unseal();
+                    if (unsl_res.is_ok()) std::cout << "Vault '" << vname << "' unsealed for authorized writes.\n";
+                    else std::cerr << "Unseal failed: " << unsl_res.error_message() << "\n";
+                } else {
+                    std::cerr << "Vault error: " << v_res.error_message() << "\n";
+                }
+            } else if (subcmd == "verify") {
+                std::string dom, vname;
+                iss >> dom >> vname;
+                auto v_res = di->domain_manager()->get_domain_vault(dom, vname);
+                if (v_res.is_ok()) {
+                    auto vf_res = v_res.value()->verify_integrity();
+                    if (vf_res.is_ok() && vf_res.value()) {
+                        std::cout << "✓ Cryptographic integrity verified: All stored slots match recorded checksums.\n";
+                    } else {
+                        std::cerr << "✗ Integrity check FAILED: " << vf_res.error_message() << "\n";
+                    }
+                } else {
+                    std::cerr << "Vault error: " << v_res.error_message() << "\n";
+                }
+            } else {
+                std::cout << "Usage: vault [info|read|write|wipe|seal|unseal|verify] <domain> <vault_name> [args...]\n";
+            }
         } else if (cmd == "catalog") {
             catalog.dump_report();
         } else if (cmd == "services" || cmd == "methods") {

@@ -48,6 +48,33 @@ struct VaultConfig {
 };
 
 /**
+ * @brief Memory statistics and live occupation metrics for a Vault instance.
+ */
+struct VaultMemoryStats {
+    std::string name;
+    std::string owner_domain;
+    std::string owner_module;
+    VaultSecurityLevel security_level = VaultSecurityLevel::Strict;
+    size_t capacity_bytes = 0;
+    size_t used_bytes = 0;
+    size_t remaining_bytes = 0;
+    size_t slot_count = 0;
+    bool is_sealed = false;
+    bool guard_pages_enabled = false;
+};
+
+/**
+ * @brief Information about a specific secret / memory block stored in a Vault.
+ */
+struct VaultSlotInfo {
+    std::string key;
+    size_t offset = 0;
+    size_t size = 0;
+    std::string checksum;
+    bool is_wiped = false;
+};
+
+/**
  * @brief High-security cryptographic vault backed by hardware-guarded secured memory.
  *
  * Implements:
@@ -117,6 +144,40 @@ public:
     Result<std::string> read_secret(const std::string& key) const;
 
     /**
+     * @brief Writes arbitrary binary data into the vault memory pool.
+     * Verifies that the currently executing domain matches owner_domain.
+     * Computes SHA-256 checksum and auto-seals if configured.
+     * @param key Secret/memory block identifier key.
+     * @param data Pointer to binary data buffer.
+     * @param size Number of bytes to write.
+     */
+    Result<void> write_memory(const std::string& key, const void* data, size_t size);
+
+    /**
+     * @brief Reads arbitrary binary data from the vault memory pool.
+     * Automatically verifies caller domain permissions and checks cryptographic integrity.
+     * @param key Secret/memory block identifier key.
+     * @return Result containing vector of raw bytes, or failure code.
+     */
+    Result<std::vector<uint8_t>> read_memory(const std::string& key) const;
+
+    /**
+     * @brief Securely volatile-zeros and wipes a specific secret slot's memory.
+     * @param key Secret identifier key.
+     */
+    Result<void> wipe_secret(const std::string& key);
+
+    /**
+     * @brief Returns comprehensive memory telemetry and occupation for this vault.
+     */
+    VaultMemoryStats memory_stats() const;
+
+    /**
+     * @brief Lists detailed memory slot allocation records (offsets, sizes, checksums).
+     */
+    std::vector<VaultSlotInfo> list_slots() const;
+
+    /**
      * @brief Checks if a secret key exists in the vault.
      */
     bool has_secret(const std::string& key) const;
@@ -148,6 +209,7 @@ private:
         size_t offset = 0;
         size_t size = 0;
         std::string checksum;
+        bool is_wiped = false;
     };
 
     VaultConfig m_config;

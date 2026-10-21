@@ -129,9 +129,12 @@ Result<void> Vault::check_caller_access(bool write_mode) const {
     );
 }
 
-Result<void> Vault::write_secret(const std::string& key, const std::string& secret_data) {
+Result<void> Vault::write_memory(const std::string& key, const void* data, size_t size) {
     if (key.empty()) {
         return Result<void>::failure(StatusCode::InvalidArg, "Secret key cannot be empty");
+    }
+    if (!data && size > 0) {
+        return Result<void>::failure(StatusCode::InvalidArg, "Data pointer cannot be null for non-zero size");
     }
 
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -153,32 +156,36 @@ Result<void> Vault::write_secret(const std::string& key, const std::string& secr
     }
 
     // 3. Allocate slot in secured memory arena
-    size_t needed = secret_data.size();
-    if (needed > m_space->remaining_bytes()) {
+    if (size > m_space->remaining_bytes()) {
         if (was_sealed) apply_hardware_protection(true);
         return Result<void>::failure(
             StatusCode::QuotaExceeded,
-            "Vault capacity exceeded for key '" + key + "'. Needed " + std::to_string(needed) +
+            "Vault capacity exceeded for key '" + key + "'. Needed " + std::to_string(size) +
             " bytes, remaining " + std::to_string(m_space->remaining_bytes()) + " bytes."
         );
     }
 
     size_t offset = m_space->used_bytes();
-    void* dest = m_space->allocate(needed);
-    if (!dest) {
+    void* dest = m_space->allocate(size);
+    if (!dest && size > 0) {
         if (was_sealed) apply_hardware_protection(true);
         return Result<void>::failure(StatusCode::OutOfMemory, "Failed to allocate memory block in vault");
     }
 
-    std::memcpy(dest, secret_data.data(), needed);
+    if (dest && size > 0) {
+        std::memcpy(dest, data, size);
+    }
 
     // 4. Compute cryptographic integrity checksum
-    std::string checksum = Crypto::sha256_hex(secret_data);
+    std::string checksum = (data && size > 0)
+        ? Crypto::sha256_hex(static_cast<const uint8_t*>(data), size)
+        : Crypto::sha256_hex("");
 
     SecretSlot slot;
     slot.offset = offset;
-    slot.size = needed;
+    slot.size = size;
     slot.checksum = std::move(checksum);
+    slot.is_wiped = false;
     m_slots[key] = std::move(slot);
 
     // 5. Hardware-reseal memory pages
@@ -189,42 +196,130 @@ Result<void> Vault::write_secret(const std::string& key, const std::string& secr
     return Result<void>::success();
 }
 
-Result<std::string> Vault::read_secret(const std::string& key) const {
+Result<void> Vault::write_secret(const std::string& key, const std::string& secret_data) {
+    return write_memory(key, secret_data.data(), secret_data.size());
+}
+
+Result<std::vector<uint8_t>> Vault::read_memory(const std::string& key) const {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     // 1. Authorize caller domain
     auto auth = check_caller_access(false);
     if (!auth.is_ok()) {
-        return Result<std::string>::failure(auth.status(), auth.error_message());
+        return Result<std::vector<uint8_t>>::failure(auth.status(), auth.error_message());
     }
 
     auto it = m_slots.find(key);
     if (it == m_slots.end()) {
-        return Result<std::string>::failure(StatusCode::NotFound, "Secret key '" + key + "' not found in vault");
+        return Result<std::vector<uint8_t>>::failure(StatusCode::NotFound, "Key '" + key + "' not found in vault");
+    }
+
+    if (it->second.is_wiped) {
+        return Result<std::vector<uint8_t>>::failure(StatusCode::NotFound, "Key '" + key + "' has been wiped from vault memory");
     }
 
     if (!m_space || !m_space->raw_base()) {
-        return Result<std::string>::failure(StatusCode::NullPointer, "Vault secured memory is null");
+        return Result<std::vector<uint8_t>>::failure(StatusCode::NullPointer, "Vault secured memory is null");
     }
 
     const SecretSlot& slot = it->second;
-    const char* base = static_cast<const char*>(m_space->raw_base());
-    const char* data_ptr = base + slot.offset;
-    std::string secret(data_ptr, slot.size);
+    const uint8_t* base = static_cast<const uint8_t*>(m_space->raw_base());
+    const uint8_t* data_ptr = base + slot.offset;
+    std::vector<uint8_t> buffer(data_ptr, data_ptr + slot.size);
 
     // 2. Verify cryptographic tamper detection
-    std::string actual_hash = Crypto::sha256_hex(secret);
+    std::string actual_hash = Crypto::sha256_hex(buffer.data(), buffer.size());
     if (actual_hash != slot.checksum) {
         log_error("CRITICAL TAMPER ALERT: Vault '", m_config.name,
                   "' key '", key, "' checksum mismatch! Expected ", slot.checksum,
                   ", got ", actual_hash);
-        return Result<std::string>::failure(
+        return Result<std::vector<uint8_t>>::failure(
             StatusCode::SecurityTampering,
-            "CRITICAL SECURITY COMPROMISE: Vault data tampering detected for key '" + key + "'!"
+            "Integrity violation: Vault '" + m_config.name + "' memory slot for key '" + key + "' has been tampered with!"
         );
     }
 
-    return Result<std::string>::success(std::move(secret));
+    return Result<std::vector<uint8_t>>::success(std::move(buffer));
+}
+
+Result<std::string> Vault::read_secret(const std::string& key) const {
+    auto mem_res = read_memory(key);
+    if (!mem_res.is_ok()) {
+        return Result<std::string>::failure(mem_res.status(), mem_res.error_message());
+    }
+    const auto& bytes = mem_res.value();
+    return Result<std::string>::success(std::string(bytes.begin(), bytes.end()));
+}
+
+Result<void> Vault::wipe_secret(const std::string& key) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    auto auth = check_caller_access(true);
+    if (!auth.is_ok()) {
+        return auth;
+    }
+
+    auto it = m_slots.find(key);
+    if (it == m_slots.end()) {
+        return Result<void>::failure(StatusCode::NotFound, "Secret key '" + key + "' not found in vault");
+    }
+
+    if (!m_space || !m_space->raw_base()) {
+        return Result<void>::failure(StatusCode::NullPointer, "Vault secured memory is null");
+    }
+
+    bool was_sealed = m_sealed;
+    if (was_sealed) {
+        apply_hardware_protection(false);
+    }
+
+    SecretSlot& slot = it->second;
+    uint8_t* base = static_cast<uint8_t*>(m_space->raw_base());
+    uint8_t* data_ptr = base + slot.offset;
+    volatile uint8_t* p = data_ptr;
+    for (size_t i = 0; i < slot.size; i++) {
+        p[i] = 0;
+    }
+    slot.is_wiped = true;
+    slot.checksum.clear();
+
+    if (was_sealed) {
+        apply_hardware_protection(true);
+    }
+
+    return Result<void>::success();
+}
+
+VaultMemoryStats Vault::memory_stats() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    VaultMemoryStats stats;
+    stats.name = m_config.name;
+    stats.owner_domain = m_config.owner_domain;
+    stats.owner_module = m_config.owner_module;
+    stats.security_level = m_config.security_level;
+    stats.capacity_bytes = m_space ? m_space->capacity() : 0;
+    stats.used_bytes = m_space ? m_space->used_bytes() : 0;
+    stats.remaining_bytes = m_space ? m_space->remaining_bytes() : 0;
+    stats.slot_count = m_slots.size();
+    stats.is_sealed = m_sealed;
+    stats.guard_pages_enabled = m_config.use_guard_pages;
+    return stats;
+}
+
+std::vector<VaultSlotInfo> Vault::list_slots() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<VaultSlotInfo> result;
+    result.reserve(m_slots.size());
+    for (const auto& [key, slot] : m_slots) {
+        VaultSlotInfo info;
+        info.key = key;
+        info.offset = slot.offset;
+        info.size = slot.size;
+        info.checksum = slot.checksum;
+        info.is_wiped = slot.is_wiped;
+        result.push_back(std::move(info));
+    }
+    return result;
 }
 
 bool Vault::has_secret(const std::string& key) const {
@@ -250,6 +345,7 @@ Result<bool> Vault::verify_integrity() const {
 
     const char* base = static_cast<const char*>(m_space->raw_base());
     for (const auto& [k, slot] : m_slots) {
+        if (slot.is_wiped) continue;
         std::string secret(base + slot.offset, slot.size);
         std::string actual_hash = Crypto::sha256_hex(secret);
         if (actual_hash != slot.checksum) {

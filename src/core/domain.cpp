@@ -407,6 +407,54 @@ Result<size_t> DomainManager::unplug_domain(const std::string& domain_name, Modu
     return Result<size_t>::success(count);
 }
 
+std::vector<std::shared_ptr<Vault>> DomainManager::list_all_vaults() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::shared_ptr<Vault>> list;
+    for (const auto& [_, domain] : m_domains) {
+        for (const auto& [__, vault] : domain->vaults()) {
+            if (vault) list.push_back(vault);
+        }
+    }
+    return list;
+}
+
+std::vector<std::shared_ptr<Vault>> DomainManager::list_domain_vaults(const std::string& domain_name) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::vector<std::shared_ptr<Vault>> list;
+    auto it = m_domains.find(domain_name);
+    if (it != m_domains.end()) {
+        for (const auto& [_, vault] : it->second->vaults()) {
+            if (vault) list.push_back(vault);
+        }
+    }
+    return list;
+}
+
+void DomainManager::dump_memory_report() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    std::cout << "\n┌────────────────────────────────────────────────────────────────────────┐\n";
+    std::cout << "│                 DVARGOSH DOMAIN & VAULT MEMORY REPORT                  │\n";
+    std::cout << "├──────────────────┬──────────────┬──────────────┬───────────────────────┤\n";
+    std::cout << "│ Domain Name      │ Capacity     │ Used Memory  │ Active Vaults         │\n";
+    std::cout << "├──────────────────┼──────────────┼──────────────┼───────────────────────┤\n";
+    for (const auto& [name, d] : m_domains) {
+        std::string cap_str = d->secured_space() ? std::to_string(d->secured_space()->capacity() / 1024) + " KB" : "None";
+        std::string used_str = d->secured_space() ? std::to_string(d->secured_space()->used_bytes()) + " B" : "0 B";
+        std::string vault_str = std::to_string(d->vaults().size()) + " vault(s)";
+
+        std::cout << "│ " << name;
+        for (size_t i = name.length(); i < 16; ++i) std::cout << " ";
+        std::cout << " │ " << cap_str;
+        for (size_t i = cap_str.length(); i < 12; ++i) std::cout << " ";
+        std::cout << " │ " << used_str;
+        for (size_t i = used_str.length(); i < 12; ++i) std::cout << " ";
+        std::cout << " │ " << vault_str;
+        for (size_t i = vault_str.length(); i < 21; ++i) std::cout << " ";
+        std::cout << " │\n";
+    }
+    std::cout << "└──────────────────┴──────────────┴──────────────┴───────────────────────┘\n\n";
+}
+
 std::vector<std::string> DomainManager::list_domains() const {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::vector<std::string> list;

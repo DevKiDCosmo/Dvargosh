@@ -83,6 +83,35 @@ bool ExecutionContext::is_system() {
     return t_call_stack.back().is_system;
 }
 
+void* ExecutionContext::allocate_command_memory(size_t size, size_t alignment) {
+    if (t_call_stack.empty()) return nullptr;
+    auto val = validate_stack_integrity();
+    if (!val.is_ok()) return nullptr;
+
+    auto& mem = t_call_stack.back().command_memory;
+    if (!mem) {
+        mem = std::make_shared<CommandMemory>(64 * 1024);
+    }
+    return mem->allocate(size, alignment);
+}
+
+CommandMemory* ExecutionContext::current_command_memory() {
+    if (t_call_stack.empty()) return nullptr;
+    auto val = validate_stack_integrity();
+    if (!val.is_ok()) return nullptr;
+    return t_call_stack.back().command_memory.get();
+}
+
+size_t ExecutionContext::command_memory_used() {
+    auto* mem = current_command_memory();
+    return mem ? mem->used_bytes() : 0;
+}
+
+size_t ExecutionContext::command_memory_capacity() {
+    auto* mem = current_command_memory();
+    return mem ? mem->capacity() : 0;
+}
+
 Result<void> ExecutionContext::verify_not_tampered(const std::string& claimed_domain) {
     auto val = validate_stack_integrity();
     if (!val.is_ok()) {

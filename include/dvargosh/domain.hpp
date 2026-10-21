@@ -112,6 +112,8 @@ public:
     Result<std::shared_ptr<Vault>> create_vault(const VaultConfig& config);
     std::shared_ptr<Vault> get_vault(const std::string& vault_name) const;
     Result<std::shared_ptr<Vault>> get_domain_vault(const std::string& domain_name, const std::string& vault_name = "default");
+    std::vector<std::shared_ptr<Vault>> list_all_vaults() const;
+    std::vector<std::shared_ptr<Vault>> list_domain_vaults(const std::string& domain_name) const;
 
     Result<SecuredMemorySpace*> init_domain_space(
         const std::string& domain_name,
@@ -123,6 +125,7 @@ public:
 
     std::vector<std::string> list_domains() const;
     void dump_report() const;
+    void dump_memory_report() const;
 
 private:
     mutable std::mutex m_mutex;

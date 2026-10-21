@@ -17,6 +17,7 @@
 namespace dvargosh {
 
 class DIContainer;
+class CommandMemory;
 
 // Injected Context provided to each loaded module
 class ModuleContext {
@@ -47,6 +48,8 @@ public:
     SecuredMemorySpace* domain_space() noexcept;
     TrackedAllocator* allocator() noexcept { return m_tracked_allocator.get(); }
     ArenaAllocator* arena() noexcept { return m_arena.get(); }
+    void* allocate_command_memory(size_t size, size_t alignment = 8);
+    CommandMemory* command_memory() noexcept;
 
     // Init custom/own secured memory space inside module
     Result<std::unique_ptr<SecuredMemorySpace>> init_own_memory_space(

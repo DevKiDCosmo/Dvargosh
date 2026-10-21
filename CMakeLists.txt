@@ -39,6 +39,7 @@ set(CORE_SOURCES
     src/core/module_catalog.cpp
     src/core/runtime.cpp
     src/core/execution_context.cpp
+    src/core/command_memory.cpp
     src/core/vault.cpp
 )
 
