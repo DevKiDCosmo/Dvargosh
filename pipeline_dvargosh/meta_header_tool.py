@@ -380,35 +380,6 @@ def main():
             print(f"  * Generated metadata header for module '{info['name']}': {hpp.relative_to(ROOT_DIR)}, {cpp.relative_to(ROOT_DIR)}")
 
     print(f"[dvargosh] Successfully generated metadata headers and companion JSON manifests in build for {generated} modules.")
-    out_dir = Path(args.out_dir)
-
-    if args.module:
-        target_dirs = [Path(args.module)]
-    else:
-        target_dirs = find_all_module_dirs()
-
-    if args.clean:
-        for d in target_dirs:
-            for f in [d / "_module_header.hpp", d / "_module_header.cpp", d / f"{d.name}.meta.json"]:
-                if f.exists():
-                    f.unlink()
-                    print(f"[dvargosh] Cleaned: {f}")
-            for j in d.glob("*.meta.json"):
-                if j.exists():
-                    j.unlink()
-                    print(f"[dvargosh] Cleaned: {j}")
-        return
-
-    print(f"[dvargosh] Meta Header Pipeline Tool: Processing {len(target_dirs)} module directories...")
-    generated = 0
-    for folder in target_dirs:
-        info = read_module_info(folder)
-        hpp, cpp = generate_header_files(info, out_dir)
-        generated += 1
-        if args.verbose or True:
-            print(f"  * Generated metadata header for module '{info['name']}': {hpp.name}, {cpp.name} (Build: {info['build_id']})")
-
-    print(f"[dvargosh] Successfully generated metadata headers and companion JSON manifests for {generated} modules.")
 
 if __name__ == "__main__":
     main()
