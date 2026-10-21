@@ -11,6 +11,7 @@
 #include "registry.hpp"
 #include "di_container.hpp"
 #include "module.hpp"
+#include "module_header.hpp"
 #include "module_loader.hpp"
 #include "module_catalog.hpp"
 #include "auto_mapper.hpp"

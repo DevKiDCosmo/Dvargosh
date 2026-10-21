@@ -1,4 +1,5 @@
 #include "dvargosh/module_loader.hpp"
+#include "dvargosh/module_header.hpp"
 #include "dvargosh/runtime.hpp"
 #include <dlfcn.h>
 #include <unistd.h>
@@ -6,6 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include <unordered_set>
+#include <optional>
 
 namespace dvargosh {
 
@@ -88,6 +90,56 @@ static bool parse_module_manifest_def(
         else if (key == "abi_version") out_abi = val;
         else if (key == "domains" || key == "domain") out_domain = val;
     }
+    return !out_name.empty();
+}
+
+static bool parse_module_meta_json(
+    const std::string& json_path,
+    std::string& out_name,
+    std::string& out_version,
+    std::string& out_abi,
+    std::string& out_domain,
+    std::string& out_build_id,
+    size_t& out_secured_mem_bytes
+) {
+    std::ifstream f(json_path);
+    if (!f.is_open()) return false;
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+
+    auto extract_str = [&](const std::string& key) -> std::string {
+        std::string pattern = "\"" + key + "\":";
+        size_t pos = content.find(pattern);
+        if (pos == std::string::npos) return "";
+        size_t q1 = content.find('\"', pos + pattern.size());
+        if (q1 == std::string::npos) return "";
+        size_t q2 = content.find('\"', q1 + 1);
+        if (q2 == std::string::npos) return "";
+        return content.substr(q1 + 1, q2 - q1 - 1);
+    };
+
+    auto extract_uint = [&](const std::string& key) -> uint64_t {
+        std::string pattern = "\"" + key + "\":";
+        size_t pos = content.find(pattern);
+        if (pos == std::string::npos) return 0;
+        size_t start = content.find_first_of("0123456789", pos + pattern.size());
+        if (start == std::string::npos) return 0;
+        size_t end = content.find_first_not_of("0123456789", start);
+        if (end == std::string::npos) end = content.size();
+        try {
+            return std::stoull(content.substr(start, end - start));
+        } catch (...) {
+            return 0;
+        }
+    };
+
+    out_name = extract_str("name");
+    out_version = extract_str("version");
+    out_abi = extract_str("abi_version");
+    out_domain = extract_str("domain");
+    out_build_id = extract_str("build_id");
+    uint64_t kb = extract_uint("secured_memory_kb");
+    out_secured_mem_bytes = static_cast<size_t>(kb) * 1024;
+
     return !out_name.empty();
 }
 
@@ -182,7 +234,26 @@ std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
                 stem = stem.substr(3);
             }
 
-            // 1. Manifest-First Discovery (Static inspection without dlopen or code execution)
+            // 1. Companion .meta.json Manifest-First Discovery (Static inspection without dlopen or code execution)
+            std::vector<std::string> candidate_jsons = {
+                dir_path + "/" + stem + ".meta.json",
+                dir_path + "/" + filename + ".meta.json",
+                "build/modules/" + stem + ".meta.json",
+                "modules/" + stem + "/" + stem + ".meta.json",
+                "development_modules/" + stem + "/" + stem + ".meta.json"
+            };
+
+            std::string meta_name, meta_version, meta_abi, meta_domain, meta_build_id;
+            size_t meta_quota = 0;
+            bool found_meta = false;
+            for (const auto& jpath : candidate_jsons) {
+                if (parse_module_meta_json(jpath, meta_name, meta_version, meta_abi, meta_domain, meta_build_id, meta_quota)) {
+                    found_meta = true;
+                    break;
+                }
+            }
+
+            // 2. Manifest .def Discovery
             std::vector<std::string> candidate_defs = {
                 dir_path + "/" + filename + ".def",
                 dir_path + "/" + stem + ".def",
@@ -196,10 +267,12 @@ std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
 
             std::string def_name, def_version, def_abi, def_domain;
             bool found_def = false;
-            for (const auto& dpath : candidate_defs) {
-                if (parse_module_manifest_def(dpath, def_name, def_version, def_abi, def_domain)) {
-                    found_def = true;
-                    break;
+            if (!found_meta) {
+                for (const auto& dpath : candidate_defs) {
+                    if (parse_module_manifest_def(dpath, def_name, def_version, def_abi, def_domain)) {
+                        found_def = true;
+                        break;
+                    }
                 }
             }
 
@@ -207,7 +280,12 @@ std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
             info.filename = filename;
             info.full_path = full_path;
 
-            if (found_def) {
+            if (found_meta) {
+                info.name = meta_name;
+                info.build_id = meta_build_id.empty() ? ("meta:" + meta_version) : meta_build_id;
+                info.abi_version = meta_abi.empty() ? DVARGOSH_ABI_VERSION_STR : meta_abi;
+                info.is_valid = true;
+            } else if (found_def) {
                 info.name = def_name;
                 info.build_id = "manifest:" + (def_version.empty() ? "1.0.0" : def_version);
                 info.abi_version = def_abi.empty() ? DVARGOSH_ABI_VERSION_STR : def_abi;
@@ -231,20 +309,30 @@ std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
                 void* handle = dlopen(full_path.c_str(), RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
                 if (!handle) continue;
 
-                auto magic_fn = reinterpret_cast<ModuleMagicFn>(dlsym(handle, "dvargosh_module_magic"));
-                if (!magic_fn || std::string(magic_fn()) != DVARGOSH_MODULE_MAGIC) {
-                    dlclose(handle);
-                    continue;
+                // Inspect static embedded header first (zero class instantiation, zero code execution)
+                auto hdr_res = ModuleHeader::read_from_handle(handle);
+                if (hdr_res.is_ok()) {
+                    const auto& hdr = hdr_res.value();
+                    info.name = hdr.name;
+                    info.build_id = hdr.build_id.empty() ? ("v" + hdr.version_str) : hdr.build_id;
+                    info.abi_version = hdr.abi_version;
+                    info.is_valid = hdr.validate().is_ok();
+                } else {
+                    auto magic_fn = reinterpret_cast<ModuleMagicFn>(dlsym(handle, "dvargosh_module_magic"));
+                    if (!magic_fn || std::string(magic_fn()) != DVARGOSH_MODULE_MAGIC) {
+                        dlclose(handle);
+                        continue;
+                    }
+
+                    auto name_fn = reinterpret_cast<ModuleNameFn>(dlsym(handle, "dvargosh_module_name"));
+                    auto build_fn = reinterpret_cast<ModuleBuildIdFn>(dlsym(handle, "dvargosh_build_id"));
+                    auto abi_fn = reinterpret_cast<ModuleAbiFn>(dlsym(handle, "dvargosh_abi_version"));
+
+                    info.name = name_fn ? name_fn() : filename;
+                    info.build_id = build_fn ? build_fn() : "unknown";
+                    info.abi_version = abi_fn ? abi_fn() : "unknown";
+                    info.is_valid = true;
                 }
-
-                auto name_fn = reinterpret_cast<ModuleNameFn>(dlsym(handle, "dvargosh_module_name"));
-                auto build_fn = reinterpret_cast<ModuleBuildIdFn>(dlsym(handle, "dvargosh_build_id"));
-                auto abi_fn = reinterpret_cast<ModuleAbiFn>(dlsym(handle, "dvargosh_abi_version"));
-
-                info.name = name_fn ? name_fn() : filename;
-                info.build_id = build_fn ? build_fn() : "unknown";
-                info.abi_version = abi_fn ? abi_fn() : "unknown";
-                info.is_valid = true;
 
                 dlclose(handle);
             }
@@ -392,16 +480,37 @@ Result<void> ModuleLoader::load_from_file(
         return Result<void>::failure(StatusCode::LoadFailed, std::string("dlopen failed: ") + (err ? err : "unknown error"));
     }
 
-    // 3. ABI Compatibility Check
-    auto abi_fn = reinterpret_cast<ModuleAbiFn>(dlsym(handle, "dvargosh_abi_version"));
-    if (!abi_fn) {
-        dlclose(handle);
-        return Result<void>::failure(StatusCode::SymbolNotFound, "Export 'dvargosh_abi_version' not found");
-    }
-    const char* abi = abi_fn();
-    if (!abi || std::string(abi) != DVARGOSH_ABI_VERSION_STR) {
-        dlclose(handle);
-        return Result<void>::failure(StatusCode::TypeMismatch, std::string("ABI mismatch: expected ") + DVARGOSH_ABI_VERSION_STR + ", got " + (abi ? abi : "null"));
+    // 3. Static Module Header Pre-Flight Inspection (Zero-execution validation before instantiating objects)
+    auto header_res = ModuleHeader::read_from_handle(handle);
+    std::optional<ModuleHeader> opt_header;
+    if (header_res.is_ok()) {
+        auto val_res = header_res.value().validate();
+        if (!val_res.is_ok()) {
+            dlclose(handle);
+            return Result<void>::failure(val_res.status(), "Module pre-flight header validation failed: " + val_res.error_message());
+        }
+        opt_header = header_res.value();
+
+        // Check if module is already loaded BEFORE calling factory constructors
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_loaded_modules.find(opt_header->name) != m_loaded_modules.end()) {
+                dlclose(handle);
+                return Result<void>::failure(StatusCode::AlreadyExists, "Module '" + opt_header->name + "' is already loaded");
+            }
+        }
+    } else {
+        // Fallback for legacy or mock modules without binary metadata header
+        auto abi_fn = reinterpret_cast<ModuleAbiFn>(dlsym(handle, "dvargosh_abi_version"));
+        if (!abi_fn) {
+            dlclose(handle);
+            return Result<void>::failure(StatusCode::SymbolNotFound, "Export 'dvargosh_abi_version' not found");
+        }
+        const char* abi = abi_fn();
+        if (!abi || std::string(abi) != DVARGOSH_ABI_VERSION_STR) {
+            dlclose(handle);
+            return Result<void>::failure(StatusCode::TypeMismatch, std::string("ABI mismatch: expected ") + DVARGOSH_ABI_VERSION_STR + ", got " + (abi ? abi : "null"));
+        }
     }
 
     // 4. Resolve Factory Functions
@@ -413,7 +522,7 @@ Result<void> ModuleLoader::load_from_file(
         return Result<void>::failure(StatusCode::SymbolNotFound, "Module export symbols 'dvargosh_module_create' or 'destroy' not found");
     }
 
-    // 5. Instantiate Module
+    // 5. Instantiate Module & Verify Manifest Against Static Header
     IModule* instance = create_fn();
     if (!instance) {
         dlclose(handle);
@@ -422,6 +531,19 @@ Result<void> ModuleLoader::load_from_file(
 
     const auto& manifest = instance->manifest();
     std::string mod_name = manifest.name;
+
+    // Cross-check identity between static binary header and runtime manifest
+    if (opt_header.has_value()) {
+        if (opt_header->name != mod_name) {
+            destroy_fn(instance);
+            dlclose(handle);
+            return Result<void>::failure(
+                StatusCode::SecurityTampering,
+                "Module identity mismatch: binary header declared '" + opt_header->name +
+                "' but runtime manifest declared '" + mod_name + "'"
+            );
+        }
+    }
 
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -432,15 +554,16 @@ Result<void> ModuleLoader::load_from_file(
         }
     }
 
-    // 6. Security Policy & Container Context
+    // 6. Security Policy & Container Context (Information from the load function are used)
     SecurityPolicy base_policy = custom_policy ? *custom_policy : m_config.default_policy;
     // Effective permissions must strictly be the INTERSECTION of the base policy ceiling and the module's requested permissions.
     // An individual restrictive custom policy can never be expanded by a manifest request.
     PermissionSet effective_perms = base_policy.permissions().intersect_with(manifest.requested_permissions);
     SecurityPolicy policy(effective_perms, base_policy.max_memory_bytes());
 
+    size_t header_quota = opt_header.has_value() ? opt_header->secured_memory_bytes : 0;
     size_t def_quota = read_module_def_quota_bytes(mod_name, filepath);
-    size_t secured_mem_size = (def_quota > 0) ? def_quota : m_config.secured_memory_size;
+    size_t secured_mem_size = (header_quota > 0) ? header_quota : ((def_quota > 0) ? def_quota : m_config.secured_memory_size);
 
     auto ctx_res = m_di->create_module_context(mod_name, manifest.domain, policy, secured_mem_size);
     if (!ctx_res.is_ok()) {

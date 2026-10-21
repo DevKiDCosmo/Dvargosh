@@ -47,7 +47,7 @@ def scan_annotated_functions(folder: Path):
     )
 
     for cpp in folder.glob("*.cpp"):
-        if cpp.name.startswith("_generated_"):
+        if cpp.name.startswith("_"):
             continue
 
         with open(cpp, "r", errors="ignore") as f:

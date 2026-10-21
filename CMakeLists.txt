@@ -67,7 +67,7 @@ elseif(EXISTS "${CMAKE_BINARY_DIR}/development_modules/DevModules.cmake")
     include(${CMAKE_BINARY_DIR}/development_modules/DevModules.cmake)
 endif()
 
-set(ALL_MODULES_LIST ${DVARGOSH_ALL_MODULE_TARGETS} ${DVARGOSH_DEVELOPMENT_MODULES_TARGETS})
+set(ALL_MODULES_LIST ${DVARGOSH_MODULES_TARGETS} ${DVARGOSH_ALL_MODULE_TARGETS} ${DVARGOSH_DEVELOPMENT_MODULES_TARGETS})
 
 # Main Executable / Demo CLI
 add_executable(dvargosh src/main.cpp)

@@ -60,7 +60,7 @@ public:
     // Usage: loader.load("math", "signature_hex") OR loader.load("libmod_math.dylib", "signature_hex")
     Result<void> load(
         const std::string& name_or_filename,
-        const std::string& signature,
+        const std::string& signature = "",
         const SecurityPolicy* custom_policy = nullptr
     );
 

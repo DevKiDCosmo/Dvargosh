@@ -11,9 +11,13 @@ dist/
 compile_commands.json
 .cache/
 
-# Auto-generated CMake target snippets
+# Auto-generated CMake target snippets & module artifacts
 modules/Modules.cmake
 development_modules/DevModules.cmake
+_module_header.hpp
+_module_header.cpp
+_generated_registration.cpp
+*.meta.json
 
 # Python cache & virtualenvs
 __pycache__/

@@ -77,50 +77,54 @@ if [ "${CLEAN_BUILD}" = true ]; then
     rm -rf "${ROOT_DIR}/build" "${OUTPUT_DIR}"
 fi
 
-# 1. Staging Development Modules
-echo "[1/6] Staging development modules into build/development_modules..."
+# 1. Generating Module Embedded Headers and Companion Manifests
+echo "[1/7] Generating Module Embedded Headers and Companion Manifests..."
+python3 "${SCRIPT_DIR}/meta_header_tool.py" --all --out-dir "${ROOT_DIR}/build/modules"
+
+# 2. Staging Development Modules
+echo "[2/7] Staging development modules into build/development_modules..."
 mkdir -p "${ROOT_DIR}/build/development_modules"
 if [ -d "${ROOT_DIR}/development_modules" ]; then
     cp -R "${ROOT_DIR}/development_modules/"* "${ROOT_DIR}/build/development_modules/"
 fi
 
-# 2. Running Pipeline Generator
-echo "[2/6] Running Pipeline Generator (Attributes, Proxies, Lint, Schema, CMake)..."
+# 3. Running Pipeline Generator
+echo "[3/7] Running Pipeline Generator (Attributes, Proxies, Lint, Schema, CMake)..."
 GEN_ARGS=""
 if [ -n "${SELECTED_MODULES}" ]; then
     GEN_ARGS="--select ${SELECTED_MODULES}"
 fi
 python3 "${SCRIPT_DIR}/generator.py" ${GEN_ARGS}
 
-# 3. Compiling with Maximum Optimizations (-O3 -DNDEBUG)
-echo "[3/6] Configuring and Compiling Production Binaries (-O3 -DNDEBUG)..."
+# 4. Compiling with Maximum Optimizations (-O3 -DNDEBUG)
+echo "[4/7] Configuring and Compiling Production Binaries (-O3 -DNDEBUG)..."
 cmake -B "${ROOT_DIR}/build" -S "${ROOT_DIR}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG"
 cmake --build "${ROOT_DIR}/build" --parallel
 
-# Sync dev modules and def manifests into build/modules/
+# Sync dev modules, def and meta.json manifests into build/modules/
 mkdir -p "${ROOT_DIR}/build/modules"
 if [ -d "${ROOT_DIR}/build/development_modules" ]; then
     find "${ROOT_DIR}/build/development_modules" -type f \( -name "*.dylib" -o -name "*.so" \) -exec cp -f {} "${ROOT_DIR}/build/modules/" \;
 fi
-find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f -name "*.def" -exec cp -f {} "${ROOT_DIR}/build/modules/" \; 2>/dev/null || true
+find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f \( -name "*.def" -o -name "*.meta.json" \) -exec cp -f {} "${ROOT_DIR}/build/modules/" \; 2>/dev/null || true
 
-# 4. Cryptographic Module Signing
-echo "[4/6] Cryptographically Signing All Production Modules..."
+# 5. Cryptographic Module Signing
+echo "[5/7] Cryptographically Signing All Production Modules..."
 python3 "${ROOT_DIR}/tools/dvargosh_tool.py" sign "${ROOT_DIR}/build" "${SIGNING_KEY}"
 
-# 5. Verification Harness (Unless Skipped)
+# 6. Verification Harness (Unless Skipped)
 if [ "${SKIP_TESTS}" = false ]; then
-    echo "[5/6] Running Verification Harness..."
+    echo "[6/7] Running Verification Harness..."
     ctest --test-dir "${ROOT_DIR}/build" --output-on-failure
     "${ROOT_DIR}/build/bin/dvargosh_pipeline_app"
 else
-    echo "[5/6] Skipping Verification Harness (--skip-tests specified)."
+    echo "[6/7] Skipping Verification Harness (--skip-tests specified)."
 fi
 
-# 6. Packaging Distribution into dist/
-echo "[6/6] Assembling Standalone Production Package in ${OUTPUT_DIR}..."
+# 7. Packaging Distribution into dist/
+echo "[7/7] Assembling Standalone Production Package in ${OUTPUT_DIR}..."
 rm -rf "${OUTPUT_DIR}"
 mkdir -p "${OUTPUT_DIR}/bin"
 mkdir -p "${OUTPUT_DIR}/modules"
@@ -130,9 +134,9 @@ mkdir -p "${OUTPUT_DIR}/docs"
 # Copy binaries
 cp -f "${ROOT_DIR}/build/bin/"* "${OUTPUT_DIR}/bin/"
 
-# Copy shared libraries and .def manifests
+# Copy shared libraries and .def / .meta.json manifests
 find "${ROOT_DIR}/build" -type f \( -name "*.dylib" -o -name "*.so" \) -exec cp -f {} "${OUTPUT_DIR}/modules/" \;
-find "${ROOT_DIR}/build/modules" "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f -name "*.def" -exec cp -f {} "${OUTPUT_DIR}/modules/" \; 2>/dev/null || true
+find "${ROOT_DIR}/build/modules" "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f \( -name "*.def" -o -name "*.meta.json" \) -exec cp -f {} "${OUTPUT_DIR}/modules/" \; 2>/dev/null || true
 
 # Copy signatures
 if [ -f "${ROOT_DIR}/build/modules/signatures.json" ]; then

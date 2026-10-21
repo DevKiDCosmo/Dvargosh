@@ -3,6 +3,7 @@
 #include "types.hpp"
 #include "permissions.hpp"
 #include "di_container.hpp"
+#include "module_header.hpp"
 #include <string>
 #include <vector>
 #include <functional>
@@ -196,13 +197,25 @@ using ModuleBuildIdFn = const char* (*)();
             return DVARGOSH_MODULE_MAGIC; \
         } \
         const char* dvargosh_module_name() { \
+            if (::dvargosh_get_module_header) { \
+                const auto* hdr = ::dvargosh_get_module_header(); \
+                if (hdr && hdr->module_name[0] != '\0') return hdr->module_name; \
+            } \
             static ModuleClass tmp; \
             return tmp.manifest().name.c_str(); \
         } \
         const char* dvargosh_build_id() { \
+            if (::dvargosh_get_module_header) { \
+                const auto* hdr = ::dvargosh_get_module_header(); \
+                if (hdr && hdr->build_id[0] != '\0') return hdr->build_id; \
+            } \
             return DVARGOSH_BUILD_ID_STR; \
         } \
         const char* dvargosh_abi_version() { \
+            if (::dvargosh_get_module_header) { \
+                const auto* hdr = ::dvargosh_get_module_header(); \
+                if (hdr && hdr->abi_version[0] != '\0') return hdr->abi_version; \
+            } \
             return DVARGOSH_ABI_VERSION_STR; \
         } \
         dvargosh::IModule* dvargosh_module_create() { \
