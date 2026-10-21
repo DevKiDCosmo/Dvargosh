@@ -127,6 +127,10 @@ using ModuleBuildIdFn = const char* (*)();
 #  define DVARGOSH_FN(...)      /* Dvargosh pipeline marker: commented out at runtime */
 #endif
 
+// TODO: add DVARGOSH_EXPORT_ALIAS_OVERRIDE(fn_name, '') for better distinguishment.
+
+#define DVARGOSH_EXPORT_ALIAS_OVERRIDE(fn_name, alias_override)
+
 // Attribute-like automatic function export macro for non-monolithic source files
 // Usage in any .cpp file:
 // DVARGOSH_EXPORT_FN("math.square", "compute", "Squares a number") {
