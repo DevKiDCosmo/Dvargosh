@@ -77,9 +77,9 @@ if [ "${CLEAN_BUILD}" = true ]; then
     rm -rf "${ROOT_DIR}/build" "${OUTPUT_DIR}"
 fi
 
-# 1. Generating Module Embedded Headers and Companion Manifests
-echo "[1/7] Generating Module Embedded Headers and Companion Manifests..."
-python3 "${SCRIPT_DIR}/meta_header_tool.py" --all --out-dir "${ROOT_DIR}/build/modules"
+# 1. Generating Module Embedded Headers and Companion Manifests in build/
+echo "[1/7] Generating Module Embedded Headers and Companion Manifests in build/..."
+python3 "${SCRIPT_DIR}/meta_header_tool.py" --all --out-dir "${ROOT_DIR}/build/modules" --headers-dir "${ROOT_DIR}/build/generated/headers"
 
 # 2. Staging Development Modules
 echo "[2/7] Staging development modules into build/development_modules..."
@@ -103,12 +103,15 @@ cmake -B "${ROOT_DIR}/build" -S "${ROOT_DIR}" \
     -DCMAKE_CXX_FLAGS="-O3 -DNDEBUG"
 cmake --build "${ROOT_DIR}/build" --parallel
 
-# Sync dev modules, def and meta.json manifests into build/modules/
+# Sync dev modules and def manifests into build/modules/
 mkdir -p "${ROOT_DIR}/build/modules"
 if [ -d "${ROOT_DIR}/build/development_modules" ]; then
     find "${ROOT_DIR}/build/development_modules" -type f \( -name "*.dylib" -o -name "*.so" \) -exec cp -f {} "${ROOT_DIR}/build/modules/" \;
 fi
-find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f \( -name "*.def" -o -name "*.meta.json" \) -exec cp -f {} "${ROOT_DIR}/build/modules/" \; 2>/dev/null || true
+find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f -name "*.def" -exec cp -f {} "${ROOT_DIR}/build/modules/" \; 2>/dev/null || true
+
+# Ensure source directories remain 100% pristine and free of generated files
+find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f \( -name "_module_header.*" -o -name "*.meta.json" -o -name "_generated_*" -o -name "*Modules.cmake" \) -delete 2>/dev/null || true
 
 # 5. Cryptographic Module Signing
 echo "[5/7] Cryptographically Signing All Production Modules..."

@@ -59,9 +59,16 @@ target_include_directories(dvargosh_core PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-# Include Auto-generated Module Targets
-include(modules/Modules.cmake)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/development_modules/DevModules.cmake")
+# Include Auto-generated Module Targets (generated in build/generated/)
+if(EXISTS "${CMAKE_BINARY_DIR}/generated/Modules.cmake")
+    include(${CMAKE_BINARY_DIR}/generated/Modules.cmake)
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/modules/Modules.cmake")
+    include(modules/Modules.cmake)
+endif()
+
+if(EXISTS "${CMAKE_BINARY_DIR}/generated/DevModules.cmake")
+    include(${CMAKE_BINARY_DIR}/generated/DevModules.cmake)
+elseif(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/development_modules/DevModules.cmake")
     include(development_modules/DevModules.cmake)
 elseif(EXISTS "${CMAKE_BINARY_DIR}/development_modules/DevModules.cmake")
     include(${CMAKE_BINARY_DIR}/development_modules/DevModules.cmake)

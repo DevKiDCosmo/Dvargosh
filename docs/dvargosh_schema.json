@@ -46,7 +46,6 @@
         "*"
       ],
       "sources": [
-        "_module_header.cpp",
         "demo_module.cpp",
         "ops_calc.cpp",
         "ops_crypto.cpp"
@@ -103,7 +102,6 @@
         "*"
       ],
       "sources": [
-        "_module_header.cpp",
         "logger_module.cpp"
       ],
       "services": []
@@ -119,7 +117,6 @@
         "*"
       ],
       "sources": [
-        "_module_header.cpp",
         "math_module.cpp"
       ],
       "services": []
@@ -135,7 +132,6 @@
         "*"
       ],
       "sources": [
-        "_module_header.cpp",
         "monitor_module.cpp"
       ],
       "services": []
@@ -151,7 +147,6 @@
         "*"
       ],
       "sources": [
-        "_module_header.cpp",
         "worker_module.cpp"
       ],
       "services": []
@@ -169,8 +164,6 @@
         "*"
       ],
       "sources": [
-        "_generated_registration.cpp",
-        "_module_header.cpp",
         "accelerator_module.cpp",
         "cipher.cpp",
         "hasher.cpp"
@@ -230,8 +223,6 @@
         "*"
       ],
       "sources": [
-        "_generated_registration.cpp",
-        "_module_header.cpp",
         "helloworld.services.cpp",
         "helloworld_module.cpp"
       ],
@@ -364,8 +355,6 @@
         "*"
       ],
       "sources": [
-        "_generated_registration.cpp",
-        "_module_header.cpp",
         "telecom.services.cpp",
         "telecom_module.cpp"
       ],

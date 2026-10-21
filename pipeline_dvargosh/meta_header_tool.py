@@ -22,7 +22,9 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 MODULES_DIR = ROOT_DIR / "modules"
 DEV_MODULES_DIR = ROOT_DIR / "development_modules"
-BUILD_MODULES_DIR = ROOT_DIR / "build" / "modules"
+BUILD_DIR = ROOT_DIR / "build"
+BUILD_MODULES_DIR = BUILD_DIR / "modules"
+DEFAULT_HEADERS_DIR = BUILD_DIR / "generated" / "headers"
 
 DVARGOSH_ABI_VERSION = "dvargosh-abi-v1"
 DVARGOSH_HEADER_MAGIC = "0x48534F4752415644ULL"  # "DVARGOSH"
@@ -168,10 +170,17 @@ def read_module_info(folder: Path):
         "services": services
     }
 
-def generate_header_files(info: dict, out_meta_dir: Path = None):
-    folder = info["folder"]
-    hpp_file = folder / "_module_header.hpp"
-    cpp_file = folder / "_module_header.cpp"
+def generate_header_files(info: dict, out_meta_dir: Path = None, out_headers_dir: Path = None):
+    # Ensure generated headers reside STRICTLY in the build directory, never in the source repository
+    if out_headers_dir is None:
+        out_headers_dir = DEFAULT_HEADERS_DIR
+
+    mod_name = info["name"]
+    target_header_dir = out_headers_dir / mod_name
+    target_header_dir.mkdir(parents=True, exist_ok=True)
+
+    hpp_file = target_header_dir / "_module_header.hpp"
+    cpp_file = target_header_dir / "_module_header.cpp"
 
     domains_csv = ", ".join(info["supported_domains"])
     svc_names = [f"{info['name']}.{s['name']}" for s in info["services"]]
@@ -276,7 +285,7 @@ def generate_header_files(info: dict, out_meta_dir: Path = None):
 
     cpp_file.write_text("\n".join(cpp_lines))
 
-    # 3. Write JSON companion manifest
+    # 3. Write JSON companion manifest into build/modules/
     meta_json = {
         "magic": "DVARGOSH_HEADER_V1",
         "name": info["name"],
@@ -299,14 +308,11 @@ def generate_header_files(info: dict, out_meta_dir: Path = None):
         "services": svc_names
     }
 
-    # Save to local module directory
-    (folder / f"{info['name']}.meta.json").write_text(json.dumps(meta_json, indent=2))
-
     if out_meta_dir:
         out_meta_dir.mkdir(parents=True, exist_ok=True)
         json_file = out_meta_dir / f"{info['name']}.meta.json"
         json_file.write_text(json.dumps(meta_json, indent=2))
-        # Also write candidate by folder name if distinct
+        folder = info["folder"]
         if folder.name != info["name"]:
             (out_meta_dir / f"{folder.name}.meta.json").write_text(json.dumps(meta_json, indent=2))
 
@@ -331,11 +337,49 @@ def main():
     parser = argparse.ArgumentParser(description="Dvargosh Meta Header Pipeline Tool")
     parser.add_argument("--all", action="store_true", help="Process all discovered modules across directories")
     parser.add_argument("--module", type=str, help="Process a specific module folder path")
-    parser.add_argument("--out-dir", type=str, default=str(BUILD_MODULES_DIR), help="Output directory for .meta.json manifests")
+    parser.add_argument("--out-dir", type=str, default=str(BUILD_MODULES_DIR), help="Output directory for .meta.json manifests (default: build/modules)")
+    parser.add_argument("--headers-dir", type=str, default=str(DEFAULT_HEADERS_DIR), help="Output directory for generated header files (default: build/generated/headers)")
     parser.add_argument("--clean", action="store_true", help="Clean generated header files")
     parser.add_argument("--verbose", action="store_true", help="Verbose logging")
 
     args = parser.parse_args()
+    out_dir = Path(args.out_dir)
+    headers_dir = Path(args.headers_dir)
+
+    if args.module:
+        target_dirs = [Path(args.module)]
+    else:
+        target_dirs = find_all_module_dirs()
+
+    if args.clean:
+        if headers_dir.exists():
+            import shutil
+            shutil.rmtree(headers_dir, ignore_errors=True)
+            print(f"[dvargosh] Cleaned headers directory: {headers_dir}")
+        for d in target_dirs:
+            for f in [d / "_module_header.hpp", d / "_module_header.cpp"]:
+                if f.exists():
+                    f.unlink()
+                    print(f"[dvargosh] Cleaned source artifact: {f}")
+            for j in d.glob("*.meta.json"):
+                if j.exists():
+                    j.unlink()
+                    print(f"[dvargosh] Cleaned source artifact: {j}")
+        return
+
+    headers_dir.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[dvargosh] Meta Header Pipeline Tool: Processing {len(target_dirs)} module directories into {headers_dir}...")
+    generated = 0
+    for folder in target_dirs:
+        info = read_module_info(folder)
+        hpp, cpp = generate_header_files(info, out_dir, headers_dir)
+        generated += 1
+        if args.verbose or True:
+            print(f"  * Generated metadata header for module '{info['name']}': {hpp.relative_to(ROOT_DIR)}, {cpp.relative_to(ROOT_DIR)}")
+
+    print(f"[dvargosh] Successfully generated metadata headers and companion JSON manifests in build for {generated} modules.")
     out_dir = Path(args.out_dir)
 
     if args.module:

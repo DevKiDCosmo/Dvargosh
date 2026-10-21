@@ -6,10 +6,10 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 echo "[dvargosh] Starting CI/CD Automation Pipeline..."
 
-echo "[1/7] Generating Module Embedded Headers and Companion Manifests..."
-python3 "${SCRIPT_DIR}/meta_header_tool.py" --all --out-dir "${ROOT_DIR}/build/modules"
+echo "[1/7] Generating Module Embedded Headers and Companion Manifests in build/..."
+python3 "${SCRIPT_DIR}/meta_header_tool.py" --all --out-dir "${ROOT_DIR}/build/modules" --headers-dir "${ROOT_DIR}/build/generated/headers"
 
-echo "[2/7] Staging development modules..."
+echo "[2/7] Staging development modules into build/..."
 mkdir -p "${ROOT_DIR}/build/development_modules"
 if [ -d "${ROOT_DIR}/development_modules" ]; then
     cp -R "${ROOT_DIR}/development_modules/"* "${ROOT_DIR}/build/development_modules/"
@@ -28,8 +28,11 @@ mkdir -p "${ROOT_DIR}/build/modules"
 if [ -d "${ROOT_DIR}/build/development_modules" ]; then
     find "${ROOT_DIR}/build/development_modules" -type f \( -name "*.dylib" -o -name "*.so" \) -exec cp -f {} "${ROOT_DIR}/build/modules/" \;
 fi
-# Copy all .def and .meta.json manifests into build/modules/
-find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f \( -name "*.def" -o -name "*.meta.json" \) -exec cp -f {} "${ROOT_DIR}/build/modules/" \; 2>/dev/null || true
+# Copy all .def manifests into build/modules/
+find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f -name "*.def" -exec cp -f {} "${ROOT_DIR}/build/modules/" \; 2>/dev/null || true
+
+# Ensure source directories remain 100% pristine and free of generated files
+find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f \( -name "_module_header.*" -o -name "*.meta.json" -o -name "_generated_*" -o -name "*Modules.cmake" \) -delete 2>/dev/null || true
 
 SECRET_KEY="dvargosh_master_signing_key_2026"
 python3 "${ROOT_DIR}/tools/dvargosh_tool.py" sign "${ROOT_DIR}/build" "${SECRET_KEY}"
