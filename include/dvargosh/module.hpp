@@ -122,13 +122,11 @@ public:
                 dom = manifest().name + ".*";
             }
 
-            // The alias (module.function) is the registered name. Old name is ditched.
-            std::string registered_name;
+            // Register with alias override if specified; otherwise register directly by canonical entry.name
+            std::string registered_name = entry.name;
             auto it = alias_map.find(entry.name);
-            if (it != alias_map.end()) {
+            if (it != alias_map.end() && !it->second.empty()) {
                 registered_name = it->second;
-            } else {
-                registered_name = manifest().name + "." + entry.name;
             }
 
             ctx.registry()->register_method(
@@ -139,6 +137,12 @@ public:
                 entry.fn,
                 &ctx.policy()
             );
+
+            // If an alias override was specified, also register the canonical entry.name as an alias pointing to registered_name,
+            // so callers can invoke via either name seamlessly.
+            if (it != alias_map.end() && !it->second.empty() && it->second != entry.name) {
+                ctx.registry()->register_alias(entry.name, registered_name);
+            }
         }
 
         // Clean registry state after registration for modular isolation
@@ -184,11 +188,11 @@ using ModuleBuildIdFn = const char* (*)();
 //     return Result<Value>::success(Value(x * x));
 // }
 #define DVARGOSH_EXPORT_FN(fn_name, domain_name, desc_str) \
-    static dvargosh::Result<dvargosh::Value> _dv_fn_impl_##fn_name(const std::vector<dvargosh::Value>& args); \
+    static dvargosh::Result<dvargosh::Value> _dv_fn_impl_##fn_name([[maybe_unused]] const std::vector<dvargosh::Value>& args); \
     [[maybe_unused]] static const dvargosh::AutoFunctionRegistrar _dv_reg_##fn_name( \
         #fn_name, domain_name, desc_str, &_dv_fn_impl_##fn_name \
     ); \
-    static dvargosh::Result<dvargosh::Value> _dv_fn_impl_##fn_name(const std::vector<dvargosh::Value>& args)
+    static dvargosh::Result<dvargosh::Value> _dv_fn_impl_##fn_name([[maybe_unused]] const std::vector<dvargosh::Value>& args)
 
 // Helper macro to export module in dynamic library (.dylib / .so)
 #define DVARGOSH_EXPORT_MODULE(ModuleClass) \

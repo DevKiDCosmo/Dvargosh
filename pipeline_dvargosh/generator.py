@@ -53,18 +53,24 @@ def scan_annotated_functions(folder: Path):
         with open(cpp, "r", errors="ignore") as f:
             code = f.read()
 
-        # 1. Check for DVARGOSH_EXPORT_FN
+        # 1. Check for DVARGOSH_EXPORT_FN and DVARGOSH_EXPORT_ALIAS_OVERRIDE
         exp_matches = re.findall(
             r'DVARGOSH_EXPORT_FN\s*\(\s*([a-zA-Z0-9_]+)\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)',
             code
         )
+        alias_matches = dict(re.findall(
+            r'DVARGOSH_EXPORT_ALIAS_OVERRIDE\s*\(\s*([a-zA-Z0-9_]+)\s*,\s*"([^"]+)"\s*\)',
+            code
+        ))
         for fn_name, domain, desc in exp_matches:
+            alias = alias_matches.get(fn_name, "")
             exported.append({
                 "function": fn_name,
                 "domain": domain,
                 "description": desc,
                 "source_file": cpp.name,
                 "is_macro_export": True,
+                "alias": alias,
                 "ret_type": "dvargosh::Value",
                 "params": "const std::vector<dvargosh::Value>& args"
             })
@@ -156,7 +162,8 @@ def generate_registration_cpp(folder: Path, annotated_fns, reg_dir: Path = None)
             lines.append("    double arg1 = args.size() > 1 ? args[1].as_double() : 0.0;")
             lines.append(f"    auto res = {fn['function']}(arg0, arg1);")
             lines.append("    return Result<Value>::success(Value(res));")
-        elif not fn["params"]:
+        elif not fn["params"] or fn["params"].strip() == "" or fn["params"].strip() == "void":
+            lines.append("    (void)args;")
             lines.append(f"    auto res = {fn['function']}();")
             lines.append("    return Result<Value>::success(Value(res));")
         else:
@@ -281,7 +288,12 @@ def generate_typed_interfaces(all_modules):
         for fn in m["exported_functions"]:
             fn_name = fn["function"]
             desc = fn["description"]
-            svc_target = f"{mod_name}.{fn_name}"
+            if fn.get("alias"):
+                svc_target = fn["alias"]
+            elif fn.get("is_macro_export"):
+                svc_target = fn_name
+            else:
+                svc_target = f"{mod_name}.{fn_name}"
 
             if "power" in fn_name or "calc" in fn_name:
                 lines.append(f"    /** @brief {desc} */")
@@ -384,7 +396,12 @@ def generate_typed_interfaces(all_modules):
         bind_lines.append("        Binder b;")
         for fn in m["exported_functions"]:
             fn_name = fn["function"]
-            svc_target = f"{mod_name}.{fn_name}"
+            if fn.get("alias"):
+                svc_target = fn["alias"]
+            elif fn.get("is_macro_export"):
+                svc_target = fn_name
+            else:
+                svc_target = f"{mod_name}.{fn_name}"
             if "power" in fn_name or "calc" in fn_name:
                 bind_lines.append(f"        if (mapper.has_service(\"{svc_target}\")) {{")
                 bind_lines.append(f"            b.{fn_name} = mapper.bind<double, double, double>(\"{svc_target}\");")

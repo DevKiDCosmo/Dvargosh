@@ -220,6 +220,7 @@
         "captives:hello_world",
         "captives:intruder",
         "captives:vault",
+        "value",
         "*"
       ],
       "sources": [
@@ -340,6 +341,25 @@
           "typed_proxy_syntax": "`HelloWorldProxy::invokeothers(ctx, ...)`",
           "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"invokeothers\")`",
           "hover_tooltip": "### Dvargosh Service: `invokeothers`\n* **Domain**: `captives:hello_world`\n* **Description**: Pipeline-attributed service method 'invokeothers'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"invokeothers\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloWorldProxy::invokeothers(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"invokeothers\");\n```\n"
+        },
+        {
+          "name": "just_true",
+          "domain": "value",
+          "description": "JUST TRUE",
+          "source_file": "helloworld.services.cpp",
+          "signature": "dvargosh::Value just_true(const std::vector<dvargosh::Value>& args)",
+          "return_type": "dvargosh::Value",
+          "parameters": "const std::vector<dvargosh::Value>& args",
+          "security": {
+            "required_permissions": [
+              "DynamicInvoke"
+            ],
+            "scoped_domain_enforcement": true
+          },
+          "rpc_syntax": "`registry->invoke(\"just_true\", {...})`",
+          "typed_proxy_syntax": "`HelloWorldProxy::just_true(ctx, ...)`",
+          "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"just_true\")`",
+          "hover_tooltip": "### Dvargosh Service: `just_true`\n* **Domain**: `value`\n* **Description**: JUST TRUE\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"just_true\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloWorldProxy::just_true(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"just_true\");\n```\n"
         }
       ]
     },

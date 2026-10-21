@@ -100,4 +100,9 @@ std::string invokeothers() {
     return hash_res.is_ok() ? hash_res.value().to_string() : "Error: " + hash_res.error_message();
 }
 
+extern void* just_true();
+DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") {
+    return Result<Value>::success(Value(true));
+}
+
 } // namespace dvargosh

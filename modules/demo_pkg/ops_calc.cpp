@@ -10,5 +10,6 @@ DVARGOSH_EXPORT_FN(demo_pkg_worker_power, "demo_pkg:worker", "Auto-registered ma
     double result = std::pow(base, exp);
     return Result<Value>::success(Value(result));
 }
+DVARGOSH_EXPORT_ALIAS_OVERRIDE(demo_pkg_worker_power, "demo_pkg.demo_pkg_worker_power");
 
 } // namespace dvargosh

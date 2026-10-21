@@ -9,5 +9,6 @@ DVARGOSH_EXPORT_FN(demo_pkg_vault_hash, "demo_pkg:vault", "Auto-registered SHA25
     std::string hashed = Crypto::sha256_hex(text);
     return Result<Value>::success(Value(hashed));
 }
+DVARGOSH_EXPORT_ALIAS_OVERRIDE(demo_pkg_vault_hash, "demo_pkg.demo_pkg_vault_hash");
 
 } // namespace dvargosh

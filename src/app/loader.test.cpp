@@ -115,6 +115,13 @@ int main() {
     assert(breach_res.is_ok());
     assert(breach_res.value().to_string().rfind("REJECTED", 0) == 0);
 
+    // Call just_true directly (registered without alias override)
+    auto just_true_res = di->registry()->invoke("just_true");
+    std::cout << "  * just_true() => "
+              << (just_true_res.is_ok() ? (just_true_res.value().as_bool() ? "true" : "false") : just_true_res.error_message()) << "\n";
+    assert(just_true_res.is_ok());
+    assert(just_true_res.value().as_bool() == true);
+
     // Call worker.box_invoke with normal execution
     auto box_ok = di->registry()->invoke("worker.box_invoke", {Value("crypto_accelerator.accelerator_rot13"), Value("SecretTest"), Value("KILL_TRIGGER")});
     std::cout << "  * worker.box_invoke(crypto_accelerator.accelerator_rot13, SecretTest) => "
