@@ -102,6 +102,10 @@ std::string invokeothers() {
 
 extern void* just_true();
 DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") {
+    auto* ctx = Runtime::get_context("hello_world"); // TODO: get_context is not secured
+    if (!ctx) return Result<Value>::failure(StatusCode(23), "Error: No active module context");
+    auto res = ctx->call("logger.debug", {Value("just_true called")});
+    std::cout << "just_true called" << std::endl;
     return Result<Value>::success(Value(true));
 }
 
