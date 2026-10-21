@@ -5,6 +5,7 @@
 using namespace dvargosh;
 
 TEST_CASE(test_monitor_module_telemetry) {
+    ScopedCallFrame test_frame("test_monitor", "system");
     auto di = std::make_shared<DIContainer>();
     ModuleLoader loader(di);
 

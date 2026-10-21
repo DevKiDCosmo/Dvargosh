@@ -181,13 +181,15 @@ public:
     Result<Value> invoke(
         const std::string& method_name,
         const std::vector<Value>& args = {},
-        const std::string& caller_module = "system",
-        const std::string& caller_domain = "system",
+        const std::string& caller_module = "",
+        const std::string& caller_domain = "",
         const SecurityPolicy* caller_policy = nullptr
     );
 
     // Bulk cleanup for a module on hot-unplug
     size_t unregister_provider(const std::string& provider_module);
+
+    bool check_domain_access(const std::string& from_domain, const std::string& to_domain) const;
 
     std::vector<std::string> list_methods() const;
     std::vector<std::string> list_services() const;
@@ -196,7 +198,6 @@ public:
     void dump_report() const;
 
 private:
-    bool check_domain_access(const std::string& from_domain, const std::string& to_domain) const;
     std::string find_similar_method(const std::string& target) const;
 
     mutable std::mutex m_mutex;

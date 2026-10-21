@@ -206,3 +206,49 @@ TEST_CASE(test_vault_memory_stats_and_reporting) {
     auto dom_vaults = dm->list_domain_vaults("crypto_tier");
     ASSERT_EQ(dom_vaults.size(), 1);
 }
+
+TEST_CASE(test_allocator_alignment_and_overflow_hardening) {
+    auto res = init_secured_memory_space("alloc_hardening_test", 64 * 1024, false);
+    ASSERT_TRUE(res.is_ok());
+    auto& space = res.value();
+
+    // 1. Invalid alignments: zero, non-power-of-two
+    ASSERT_TRUE(space->allocate(64, 0) == nullptr);
+    ASSERT_TRUE(space->allocate(64, 3) == nullptr);
+    ASSERT_TRUE(space->allocate(64, 7) == nullptr);
+    ASSERT_TRUE(space->allocate(64, 15) == nullptr);
+
+    // 2. Arithmetic overflow attempts
+    ASSERT_TRUE(space->allocate(SIZE_MAX, 8) == nullptr);
+    ASSERT_TRUE(space->allocate(SIZE_MAX - 16, 16) == nullptr);
+
+    // 3. Valid power-of-two alignments
+    void* p1 = space->allocate(32, 1);
+    ASSERT_TRUE(p1 != nullptr);
+    void* p2 = space->allocate(32, 2);
+    ASSERT_TRUE(p2 != nullptr);
+    ASSERT_EQ(reinterpret_cast<uintptr_t>(p2) % 2, 0);
+    void* p4 = space->allocate(32, 4);
+    ASSERT_TRUE(p4 != nullptr);
+    ASSERT_EQ(reinterpret_cast<uintptr_t>(p4) % 4, 0);
+    void* p8 = space->allocate(32, 8);
+    ASSERT_TRUE(p8 != nullptr);
+    ASSERT_EQ(reinterpret_cast<uintptr_t>(p8) % 8, 0);
+    void* p16 = space->allocate(32, 16);
+    ASSERT_TRUE(p16 != nullptr);
+    ASSERT_EQ(reinterpret_cast<uintptr_t>(p16) % 16, 0);
+
+    // 4. CommandMemory alignment and overflow guards
+    CommandMemory cmd_mem(16 * 1024);
+    ASSERT_TRUE(cmd_mem.allocate(64, 0) == nullptr);
+    ASSERT_TRUE(cmd_mem.allocate(64, 5) == nullptr);
+    ASSERT_TRUE(cmd_mem.allocate(64, 13) == nullptr);
+    ASSERT_TRUE(cmd_mem.allocate(SIZE_MAX, 8) == nullptr);
+
+    void* cp8 = cmd_mem.allocate(64, 8);
+    ASSERT_TRUE(cp8 != nullptr);
+    ASSERT_EQ(reinterpret_cast<uintptr_t>(cp8) % 8, 0);
+    void* cp64 = cmd_mem.allocate(64, 64);
+    ASSERT_TRUE(cp64 != nullptr);
+    ASSERT_EQ(reinterpret_cast<uintptr_t>(cp64) % 64, 0);
+}

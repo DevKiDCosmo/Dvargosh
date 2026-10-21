@@ -188,8 +188,9 @@ TEST_CASE(test_domain_secured_space_and_vaults_unloader) {
 }
 
 TEST_CASE(test_call_stack_hmac_tamper_detection) {
-    ASSERT_TRUE(ExecutionContext::is_system());
-    ASSERT_EQ(ExecutionContext::current_domain(), "system");
+    // Fail-closed default: unauthenticated stack without frame defaults to untrusted, not system
+    ASSERT_FALSE(ExecutionContext::is_system());
+    ASSERT_EQ(ExecutionContext::current_domain(), "untrusted");
 
     {
         ScopedCallFrame frame("mod_alpha", "dom_alpha");
@@ -202,7 +203,14 @@ TEST_CASE(test_call_stack_hmac_tamper_detection) {
         ASSERT_TRUE(valid_res.is_ok());
     }
 
-    // Frame cleanly popped
-    ASSERT_TRUE(ExecutionContext::is_system());
-    ASSERT_EQ(ExecutionContext::current_domain(), "system");
+    // Explicit system frame grants system authority
+    {
+        ScopedCallFrame sys_frame("system_runner", "system");
+        ASSERT_TRUE(ExecutionContext::is_system());
+        ASSERT_EQ(ExecutionContext::current_domain(), "system");
+    }
+
+    // Frame cleanly popped -> returns to untrusted
+    ASSERT_FALSE(ExecutionContext::is_system());
+    ASSERT_EQ(ExecutionContext::current_domain(), "untrusted");
 }

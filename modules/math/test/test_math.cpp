@@ -5,6 +5,7 @@
 using namespace dvargosh;
 
 TEST_CASE(test_math_module_computations_and_events) {
+    ScopedCallFrame test_frame("test_math", "system");
     auto di = std::make_shared<DIContainer>();
     ModuleLoader loader(di);
 

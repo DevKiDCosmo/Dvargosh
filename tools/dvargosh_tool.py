@@ -9,6 +9,7 @@ Dvargosh Module Tool:
 
 import os
 import sys
+import re
 import configparser
 import hmac
 import hashlib
@@ -21,19 +22,38 @@ CMAKE_MODULES_FILE = MODULES_DIR / "Modules.cmake"
 
 def parse_module_def(def_path):
     config = configparser.ConfigParser()
-    config.read(def_path)
+    try:
+        config.read(def_path)
+    except Exception as e:
+        raise ValueError(f"Malformed manifest {def_path}: {e}")
+
     if "module" not in config:
         raise ValueError(f"Missing [module] section in {def_path}")
     sec = config["module"]
+    name = sec.get("name")
+    if not name or not re.match(r'^[a-zA-Z0-9_]+$', name):
+        raise ValueError(f"Invalid module name '{name}' in {def_path}: must match ^[a-zA-Z0-9_]+$")
+
+    raw_sources = [s.strip() for s in sec.get("sources", "").split(",") if s.strip()]
+    for src in raw_sources:
+        p = Path(src)
+        if p.is_absolute() or ".." in p.parts:
+            raise ValueError(f"Path traversal or absolute path detected in sources of module '{name}' ({def_path}): {src}")
+
+    raw_links = [l.strip() for l in sec.get("link_libraries", "dvargosh_core").split(",") if l.strip()]
+    for lib in raw_links:
+        if not re.match(r'^[a-zA-Z0-9_]+$', lib):
+            raise ValueError(f"Invalid link library target '{lib}' in {def_path}")
+
     return {
-        "name": sec.get("name"),
+        "name": name,
         "version": sec.get("version", "1.0.0"),
         "description": sec.get("description", ""),
         "author": sec.get("author", "Dvargosh"),
         "secured_memory_kb": sec.getint("secured_memory_kb", 2048),
         "domains": [d.strip() for d in sec.get("domains", "default").split(",")],
-        "sources": [s.strip() for s in sec.get("sources", "").split(",")],
-        "link_libraries": [l.strip() for l in sec.get("link_libraries", "dvargosh_core").split(",") if l.strip()],
+        "sources": raw_sources,
+        "link_libraries": raw_links,
         "dir": def_path.parent
     }
 
@@ -46,7 +66,8 @@ def discover_modules():
                 mod_info = parse_module_def(def_path)
                 modules.append(mod_info)
             except Exception as e:
-                print(f"[WARN] Error parsing {def_path}: {e}")
+                print(f"[ERROR] Failed parsing manifest {def_path}: {e}", file=sys.stderr)
+                sys.exit(1)
     return modules
 
 def generate_cmake(modules):

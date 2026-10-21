@@ -174,7 +174,12 @@ Result<void> SecuredMemorySpace::initialize() {
     }
 
     if (m_config.lock_in_ram) {
-        mlock(m_usable_memory, m_usable_size);
+        if (mlock(m_usable_memory, m_usable_size) != 0) {
+            munmap(m_total_mapped, m_total_mapped_size);
+            m_total_mapped = nullptr;
+            m_usable_memory = nullptr;
+            return Result<void>::failure(StatusCode::InternalError, "mlock() failed to lock secured memory space in RAM");
+        }
     }
 
     m_used_offset = 0;
@@ -184,10 +189,21 @@ Result<void> SecuredMemorySpace::initialize() {
 void* SecuredMemorySpace::allocate(size_t size, size_t alignment) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (!m_usable_memory || size == 0) return nullptr;
+    // Alignment must be positive and a power of two
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) return nullptr;
+    if (size > m_usable_size) return nullptr;
 
-    uintptr_t current = reinterpret_cast<uintptr_t>(m_usable_memory) + m_used_offset;
-    uintptr_t aligned = (current + alignment - 1) & ~(alignment - 1);
-    size_t new_offset = (aligned - reinterpret_cast<uintptr_t>(m_usable_memory)) + size;
+    uintptr_t base = reinterpret_cast<uintptr_t>(m_usable_memory);
+    uintptr_t current = base + m_used_offset;
+
+    // Guard against arithmetic overflow during alignment
+    if (alignment - 1 > UINTPTR_MAX - current) return nullptr;
+    uintptr_t aligned = (current + alignment - 1) & ~(static_cast<uintptr_t>(alignment - 1));
+
+    size_t offset_from_base = aligned - base;
+    // Guard against arithmetic overflow when adding requested size
+    if (size > SIZE_MAX - offset_from_base) return nullptr;
+    size_t new_offset = offset_from_base + size;
 
     if (new_offset > m_usable_size) {
         return nullptr; // Quota exceeded in secured container

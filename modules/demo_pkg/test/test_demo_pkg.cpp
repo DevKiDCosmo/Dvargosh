@@ -5,6 +5,7 @@
 using namespace dvargosh;
 
 TEST_CASE(test_demo_pkg_subsystems_and_cross_domain_restrictions) {
+    ScopedCallFrame test_frame("test_demo_pkg", "system");
     auto di = std::make_shared<DIContainer>();
     ModuleLoader loader(di);
 

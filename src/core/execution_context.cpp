@@ -49,35 +49,35 @@ Result<void> ExecutionContext::validate_stack_integrity() {
 }
 
 std::string ExecutionContext::current_domain() {
-    if (t_call_stack.empty()) return "system";
+    if (t_call_stack.empty()) return "untrusted";
     auto val = validate_stack_integrity();
     if (!val.is_ok()) return "__COMPROMISED__";
     return t_call_stack.back().domain_name;
 }
 
 std::string ExecutionContext::current_module() {
-    if (t_call_stack.empty()) return "system";
+    if (t_call_stack.empty()) return "untrusted";
     auto val = validate_stack_integrity();
     if (!val.is_ok()) return "__COMPROMISED__";
     return t_call_stack.back().module_name;
 }
 
 std::string ExecutionContext::caller_domain() {
-    if (t_call_stack.empty()) return "system";
+    if (t_call_stack.empty()) return "untrusted";
     auto val = validate_stack_integrity();
     if (!val.is_ok()) return "__COMPROMISED__";
     return t_call_stack.back().caller_domain;
 }
 
 std::string ExecutionContext::caller_module() {
-    if (t_call_stack.empty()) return "system";
+    if (t_call_stack.empty()) return "untrusted";
     auto val = validate_stack_integrity();
     if (!val.is_ok()) return "__COMPROMISED__";
     return t_call_stack.back().caller_module;
 }
 
 bool ExecutionContext::is_system() {
-    if (t_call_stack.empty()) return true;
+    if (t_call_stack.empty()) return false;
     auto val = validate_stack_integrity();
     if (!val.is_ok()) return false;
     return t_call_stack.back().is_system;
@@ -117,13 +117,21 @@ Result<void> ExecutionContext::verify_not_tampered(const std::string& claimed_do
     if (!val.is_ok()) {
         return val;
     }
-    if (claimed_domain.empty() || claimed_domain == "*") {
+    if (t_call_stack.empty() || claimed_domain.empty()) {
         return Result<void>::success();
     }
     std::string actual = current_domain();
     if (actual == "system") {
         // System caller holds universal privilege
         return Result<void>::success();
+    }
+    if (claimed_domain == "*") {
+        log_error("CRITICAL SECURITY VIOLATION: Non-system domain '", actual,
+                  "' attempted to claim wildcard domain '*'.");
+        return Result<void>::failure(
+            StatusCode::SecurityTampering,
+            "Security Violation: Non-system domain '" + actual + "' attempted to claim wildcard '*'"
+        );
     }
     if (actual != claimed_domain) {
         log_error("CRITICAL SECURITY VIOLATION: Execution domain tampering detected! Current domain '",

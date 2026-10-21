@@ -104,11 +104,23 @@ CommandMemory& CommandMemory::operator=(CommandMemory&& other) noexcept {
 
 void* CommandMemory::allocate(size_t size, size_t alignment) {
     if (size == 0 || !m_buffer) return nullptr;
+    // Alignment must be positive and a power of two
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0) return nullptr;
+    if (size > m_capacity) return nullptr;
+
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    uintptr_t current = reinterpret_cast<uintptr_t>(m_buffer) + m_used_offset;
-    uintptr_t aligned = (current + alignment - 1) & ~(alignment - 1);
-    size_t new_offset = (aligned - reinterpret_cast<uintptr_t>(m_buffer)) + size;
+    uintptr_t base = reinterpret_cast<uintptr_t>(m_buffer);
+    uintptr_t current = base + m_used_offset;
+
+    // Guard against arithmetic overflow during alignment
+    if (alignment - 1 > UINTPTR_MAX - current) return nullptr;
+    uintptr_t aligned = (current + alignment - 1) & ~(static_cast<uintptr_t>(alignment - 1));
+
+    size_t offset_from_base = aligned - base;
+    // Guard against arithmetic overflow when adding requested size
+    if (size > SIZE_MAX - offset_from_base) return nullptr;
+    size_t new_offset = offset_from_base + size;
 
     if (new_offset > m_capacity) {
         return nullptr; // Quota exceeded in command memory

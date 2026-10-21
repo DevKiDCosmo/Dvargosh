@@ -46,10 +46,15 @@ bool Domain::is_domain_blacklisted(const std::string& target_domain) const {
 }
 
 bool Domain::can_access_domain(const std::string& target_domain) const {
+    if (target_domain.empty()) return false;
     if (is_domain_blacklisted(target_domain)) return false;
-    if (target_domain.empty() || target_domain == m_name) return true;
+    if (target_domain == m_name) return true;
     if (m_allowed_targets.find("*") != m_allowed_targets.end()) return true;
-    return m_allowed_targets.find(target_domain) != m_allowed_targets.end();
+    if (m_allowed_targets.find(target_domain) != m_allowed_targets.end()) return true;
+    if (target_domain == "*" || (target_domain.size() >= 2 && target_domain.substr(target_domain.size() - 2) == ".*")) {
+        return true;
+    }
+    return false;
 }
 
 Result<void> Domain::unload_secured_space() {
@@ -213,10 +218,14 @@ bool DomainManager::is_cross_domain_blacklisted(const std::string& from_domain, 
 }
 
 bool DomainManager::check_cross_domain_access(const std::string& from_domain, const std::string& to_domain) const {
-    if (from_domain.empty() || to_domain.empty()) return true;
+    if (from_domain.empty() || to_domain.empty()) return false;
+    if (from_domain == "system") return true;
     std::lock_guard<std::mutex> lock(m_mutex);
     auto it = m_domains.find(from_domain);
-    if (it == m_domains.end()) return false;
+    if (it == m_domains.end()) {
+        // Unmanaged / unknown callers can only access public wildcard services
+        return (to_domain == "*" || (to_domain.size() >= 2 && to_domain.substr(to_domain.size() - 2) == ".*"));
+    }
     return it->second->can_access_domain(to_domain);
 }
 
@@ -239,12 +248,15 @@ Result<void> DomainManager::unload_domain_vaults(const std::string& domain_name)
 }
 
 SecuredMemorySpace* DomainManager::get_domain_space(const std::string& domain_name) {
-    std::string caller = ExecutionContext::current_domain();
-    if (caller != "system" && caller != domain_name) {
-        if (!check_cross_domain_access(caller, domain_name)) {
-            log_error("CROSS-DOMAIN VIOLATION: Current domain '", caller,
-                      "' is not authorized to acquire raw pointer to domain space '", domain_name, "'.");
-            return nullptr;
+    if (domain_name.empty()) return nullptr;
+    if (ExecutionContext::frame_depth() > 0) {
+        std::string caller = ExecutionContext::current_domain();
+        if (caller != "system" && caller != domain_name) {
+            if (!check_cross_domain_access(caller, domain_name)) {
+                log_error("CROSS-DOMAIN VIOLATION: Current domain '", caller,
+                          "' is not authorized to acquire raw pointer to domain space '", domain_name, "'.");
+                return nullptr;
+            }
         }
     }
     std::lock_guard<std::mutex> lock(m_mutex);
@@ -259,6 +271,9 @@ Result<SecuredMemorySpace*> DomainManager::get_domain_space(
     const std::string& domain_name,
     const std::string& caller_domain
 ) {
+    if (domain_name.empty()) {
+        return Result<SecuredMemorySpace*>::failure(StatusCode::InvalidArg, "Target domain name cannot be empty");
+    }
     std::string effective_caller = caller_domain;
     if (effective_caller.empty()) {
         effective_caller = ExecutionContext::current_domain();
@@ -269,11 +284,11 @@ Result<SecuredMemorySpace*> DomainManager::get_domain_space(
         }
     }
 
-    if (!effective_caller.empty() && effective_caller != "system" && effective_caller != domain_name) {
-        if (!check_cross_domain_access(effective_caller, domain_name)) {
+    if (effective_caller.empty() || (effective_caller != "system" && effective_caller != domain_name)) {
+        if (effective_caller.empty() || !check_cross_domain_access(effective_caller, domain_name)) {
             return Result<SecuredMemorySpace*>::failure(
                 StatusCode::PermissionDenied,
-                "Cross-Domain Violation: Domain '" + effective_caller +
+                "Cross-Domain Violation: Domain '" + (effective_caller.empty() ? "<empty>" : effective_caller) +
                 "' is unauthorized to access secured memory space of domain '" + domain_name + "'"
             );
         }
@@ -318,13 +333,18 @@ Result<std::shared_ptr<Vault>> DomainManager::get_domain_vault(
     const std::string& domain_name,
     const std::string& vault_name
 ) {
-    std::string caller = ExecutionContext::current_domain();
-    if (caller != "system" && caller != domain_name) {
-        if (!check_cross_domain_access(caller, domain_name)) {
-            return Result<std::shared_ptr<Vault>>::failure(
-                StatusCode::PermissionDenied,
-                "Cross-Domain Violation: Domain '" + caller + "' cannot access vaults in domain '" + domain_name + "'"
-            );
+    if (domain_name.empty()) {
+        return Result<std::shared_ptr<Vault>>::failure(StatusCode::InvalidArg, "Target domain name cannot be empty");
+    }
+    if (ExecutionContext::frame_depth() > 0) {
+        std::string caller = ExecutionContext::current_domain();
+        if (caller != "system" && caller != domain_name) {
+            if (!check_cross_domain_access(caller, domain_name)) {
+                return Result<std::shared_ptr<Vault>>::failure(
+                    StatusCode::PermissionDenied,
+                    "Cross-Domain Violation: Domain '" + caller + "' cannot access vaults in domain '" + domain_name + "'"
+                );
+            }
         }
     }
 

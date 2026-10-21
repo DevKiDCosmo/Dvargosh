@@ -5,6 +5,7 @@
 using namespace dvargosh;
 
 TEST_CASE(test_logger_module_lifecycle_and_service) {
+    ScopedCallFrame test_frame("test_logger", "system");
     auto di = std::make_shared<DIContainer>();
     ModuleLoader loader(di);
 

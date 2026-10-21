@@ -7,6 +7,7 @@ using namespace dvargosh;
 int main() {
     std::cout << "[dvargosh] Standalone App Test: Loader & Auto-Registration\n";
 
+    ScopedCallFrame host_frame("host_loader_test", "system");
     auto di = std::make_shared<DIContainer>();
     const std::string secret_key = "dvargosh_master_signing_key_2026";
 

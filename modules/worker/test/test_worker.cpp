@@ -4,6 +4,7 @@
 using namespace dvargosh;
 
 TEST_CASE(test_worker_module_secured_memory_and_resources) {
+    ScopedCallFrame test_frame("test_worker", "system");
     auto di = std::make_shared<DIContainer>();
     // Allow worker domain to cross-call compute (math) and core (logger)
     di->domain_manager()->allow_cross_domain("worker", "compute");

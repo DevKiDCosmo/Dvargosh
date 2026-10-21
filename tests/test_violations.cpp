@@ -249,3 +249,49 @@ TEST_CASE(test_alias_override_method_resolution) {
     ASSERT_TRUE(call_alias.is_ok());
     ASSERT_EQ(call_alias.value().to_string(), "HASHED_TestInput");
 }
+
+TEST_CASE(test_fail_closed_empty_domain_checks) {
+    auto dm = std::make_shared<DomainManager>();
+    Registry reg;
+    reg.set_domain_manager(dm.get());
+
+    // Both Registry and DomainManager must fail-closed if domain names are empty
+    ASSERT_FALSE(reg.check_domain_access("", "default"));
+    ASSERT_FALSE(reg.check_domain_access("default", ""));
+    ASSERT_FALSE(reg.check_domain_access("", ""));
+
+    ASSERT_FALSE(dm->check_cross_domain_access("", "default"));
+    ASSERT_FALSE(dm->check_cross_domain_access("default", ""));
+    ASSERT_FALSE(dm->check_cross_domain_access("", ""));
+}
+
+TEST_CASE(test_anonymous_invocation_fails_closed) {
+    auto di = std::make_shared<DIContainer>();
+    auto dm = di->domain_manager();
+
+    dm->create_domain("private_vault", SecurityPolicy::strict());
+
+    // Register a private method in private_vault
+    di->registry()->register_method(
+        "vault.get_key",
+        "Secret Key Accessor",
+        "vault_mod",
+        "private_vault",
+        [](const std::vector<Value>&) {
+            return Result<Value>::success(Value("ROOT_SUPER_SECRET"));
+        }
+    );
+
+    // Anonymous caller (no execution frame, empty domain) -> defaults to "untrusted", NOT "system"
+    auto unauth_res = di->registry()->invoke("vault.get_key");
+    ASSERT_FALSE(unauth_res.is_ok());
+    ASSERT_EQ(unauth_res.status(), StatusCode::PermissionDenied);
+
+    // Authorized supervisor execution in system frame succeeds
+    {
+        ScopedCallFrame supervisor("sys_runner", "system");
+        auto auth_res = di->registry()->invoke("vault.get_key");
+        ASSERT_TRUE(auth_res.is_ok());
+        ASSERT_EQ(auth_res.value().to_string(), "ROOT_SUPER_SECRET");
+    }
+}

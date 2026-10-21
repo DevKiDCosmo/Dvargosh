@@ -35,7 +35,9 @@ Registry::Registry() = default;
 Registry::~Registry() = default;
 
 bool Registry::check_domain_access(const std::string& from_domain, const std::string& to_domain) const {
-    if (!m_domain_mgr || from_domain.empty() || to_domain.empty() || from_domain == "system") return true;
+    if (from_domain.empty() || to_domain.empty()) return false;
+    if (from_domain == "system") return true;
+    if (!m_domain_mgr) return false;
     return m_domain_mgr->check_cross_domain_access(from_domain, to_domain);
 }
 
@@ -198,8 +200,8 @@ Result<Value> Registry::invoke(
         effective_caller_module = ExecutionContext::current_module();
     } else {
         if (effective_caller_domain.empty()) {
-            effective_caller_domain = "system";
-            effective_caller_module = "system";
+            effective_caller_domain = "untrusted";
+            effective_caller_module = "untrusted";
         }
     }
 
@@ -252,7 +254,7 @@ Result<Value> Registry::invoke(
     }
 
     // Check Cross-Domain Access Permission
-    if (m_domain_mgr && !effective_caller_domain.empty() && effective_caller_domain != "system" && !target_domain.empty()) {
+    if (m_domain_mgr && effective_caller_domain != "system") {
         if (!m_domain_mgr->check_cross_domain_access(effective_caller_domain, target_domain)) {
             return Result<Value>::failure(
                 StatusCode::PermissionDenied,

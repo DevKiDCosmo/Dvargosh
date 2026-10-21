@@ -200,6 +200,7 @@ int main(int argc, char** argv) {
 
     // Interactive CLI REPL
     std::cout << "[dvargosh] Starting Interactive CLI...\nType 'help' for commands.\n\n";
+    ScopedCallFrame admin_frame("cli_admin", "system");
     auto di = std::make_shared<DIContainer>();
     ModuleLoaderConfig cfg;
     cfg.enforce_signatures = false;

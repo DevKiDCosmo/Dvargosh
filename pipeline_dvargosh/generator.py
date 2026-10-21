@@ -98,16 +98,21 @@ def scan_annotated_functions(folder: Path):
     return annotated, exported
 
 def get_module_name(folder: Path) -> str:
+    name = folder.name
     def_file = folder / "module.def"
     if def_file.exists():
         cfg = configparser.ConfigParser()
         try:
             cfg.read(def_file)
             if "module" in cfg and "name" in cfg["module"]:
-                return cfg["module"]["name"]
-        except Exception:
-            pass
-    return folder.name
+                name = cfg["module"]["name"]
+        except Exception as e:
+            print(f"[ERROR] Failed to parse {def_file}: {e}", file=sys.stderr)
+            sys.exit(1)
+    if not re.match(r'^[a-zA-Z0-9_]+$', name):
+        print(f"[ERROR] Invalid module name '{name}' in {folder}: must match ^[a-zA-Z0-9_]+$", file=sys.stderr)
+        sys.exit(1)
+    return name
 
 def generate_registration_cpp(folder: Path, annotated_fns):
     """
@@ -196,6 +201,10 @@ def sync_module_def(folder: Path, annotated_fns, exported_fns):
             existing_desc = cfg["module"].get("description", existing_desc)
             existing_author = cfg["module"].get("author", existing_author)
             existing_kb = cfg["module"].getint("secured_memory_kb", existing_kb)
+
+    if not re.match(r'^[a-zA-Z0-9_]+$', existing_name):
+        print(f"[ERROR] Invalid module name '{existing_name}' in {def_file}: must match ^[a-zA-Z0-9_]+$", file=sys.stderr)
+        sys.exit(1)
 
     content = f"""[module]
 name = {existing_name}
@@ -432,6 +441,7 @@ using namespace dvargosh::generated::telecom;
 int main() {
     std::cout << "[dvargosh] Pipeline Auto-Generated App Demo\\n";
 
+    ScopedCallFrame host_frame("host_pipeline_app", "system");
     auto di = std::make_shared<DIContainer>();
     const std::string secret_key = "dvargosh_master_signing_key_2026";
 

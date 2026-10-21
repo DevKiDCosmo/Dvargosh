@@ -121,6 +121,7 @@ private:
     std::vector<std::string> m_search_paths;
     std::unordered_map<std::string, DiscoveredModuleInfo> m_discovered_by_name;
     std::unordered_map<std::string, DiscoveredModuleInfo> m_discovered_by_filename;
+    std::unordered_map<std::string, std::string> m_known_signatures;
     mutable std::mutex m_mutex;
     std::unordered_map<std::string, LoadedModule> m_loaded_modules;
 };

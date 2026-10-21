@@ -57,6 +57,9 @@ public:
     }
 
     Permission raw_mask() const noexcept { return m_mask; }
+    PermissionSet intersect_with(const PermissionSet& other) const noexcept {
+        return PermissionSet(static_cast<Permission>(static_cast<uint32_t>(m_mask) & static_cast<uint32_t>(other.m_mask)));
+    }
     std::vector<std::string> to_strings() const;
     static PermissionSet from_strings(const std::vector<std::string>& list);
 

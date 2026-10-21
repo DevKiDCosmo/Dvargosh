@@ -47,11 +47,85 @@ static size_t read_module_def_quota_bytes(const std::string& mod_name, const std
     return 0;
 }
 
+static bool parse_module_manifest_def(
+    const std::string& def_path,
+    std::string& out_name,
+    std::string& out_version,
+    std::string& out_abi,
+    std::string& out_domain
+) {
+    std::ifstream f(def_path);
+    if (!f.is_open()) return false;
+    std::string line;
+    bool in_module = false;
+    while (std::getline(f, line)) {
+        size_t first = line.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) continue;
+        if (line[first] == '#' || line[first] == ';') continue;
+        if (line[first] == '[') {
+            in_module = (line.find("[module]") != std::string::npos);
+            continue;
+        }
+        if (!in_module) continue;
+        auto eq = line.find('=');
+        if (eq == std::string::npos) continue;
+        std::string key = line.substr(first, eq - first);
+        std::string val = line.substr(eq + 1);
+
+        size_t k_end = key.find_last_not_of(" \t\r\n");
+        if (k_end != std::string::npos) key = key.substr(0, k_end + 1);
+
+        size_t v_start = val.find_first_not_of(" \t\r\n");
+        size_t v_end = val.find_last_not_of(" \t\r\n");
+        if (v_start != std::string::npos && v_end != std::string::npos) {
+            val = val.substr(v_start, v_end - v_start + 1);
+        } else {
+            val = "";
+        }
+
+        if (key == "name") out_name = val;
+        else if (key == "version") out_version = val;
+        else if (key == "abi_version") out_abi = val;
+        else if (key == "domains" || key == "domain") out_domain = val;
+    }
+    return !out_name.empty();
+}
+
+static void load_signatures_from_file(const std::string& path, std::unordered_map<std::string, std::string>& sigs) {
+    std::ifstream f(path);
+    if (!f.is_open()) return;
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    size_t pos = 0;
+    while ((pos = content.find("\"hmac_sha256\":", pos)) != std::string::npos) {
+        size_t quote1 = content.find('\"', pos + 14);
+        if (quote1 == std::string::npos) break;
+        size_t quote2 = content.find('\"', quote1 + 1);
+        if (quote2 == std::string::npos) break;
+        std::string hmac = content.substr(quote1 + 1, quote2 - quote1 - 1);
+
+        size_t brace = content.rfind('{', pos);
+        if (brace != std::string::npos) {
+            size_t key_quote2 = content.rfind('\"', brace);
+            if (key_quote2 != std::string::npos) {
+                size_t key_quote1 = content.rfind('\"', key_quote2 - 1);
+                if (key_quote1 != std::string::npos) {
+                    std::string fname = content.substr(key_quote1 + 1, key_quote2 - key_quote1 - 1);
+                    sigs[fname] = hmac;
+                }
+            }
+        }
+        pos = quote2 + 1;
+    }
+}
+
 ModuleLoader::ModuleLoader(std::shared_ptr<DIContainer> di, ModuleLoaderConfig config)
     : m_di(std::move(di)), m_config(std::move(config)) {
     // Default search directories
     m_search_paths.push_back("./build/modules");
     m_search_paths.push_back("./modules");
+
+    load_signatures_from_file("./build/modules/signatures.json", m_known_signatures);
+    load_signatures_from_file("./modules/signatures.json", m_known_signatures);
 }
 
 void ModuleLoader::add_search_path(const std::string& path) {
@@ -60,6 +134,7 @@ void ModuleLoader::add_search_path(const std::string& path) {
         if (existing == path) return;
     }
     m_search_paths.push_back(path);
+    load_signatures_from_file(path + "/signatures.json", m_known_signatures);
 }
 
 #ifndef RTLD_NODELETE
@@ -82,6 +157,11 @@ std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
     const std::string ext = ".so";
 #endif
 
+    // Pre-load signatures from all search paths
+    for (const auto& dir : m_search_paths) {
+        load_signatures_from_file(dir + "/signatures.json", m_known_signatures);
+    }
+
     for (const auto& dir_path : m_search_paths) {
         DIR* dir = opendir(dir_path.c_str());
         if (!dir) continue;
@@ -94,29 +174,80 @@ std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
 
             std::string full_path = dir_path + "/" + filename;
 
-            // Inspect dynamic library header symbols without executing module code
-            void* handle = dlopen(full_path.c_str(), RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
-            if (!handle) continue;
-
-            auto magic_fn = reinterpret_cast<ModuleMagicFn>(dlsym(handle, "dvargosh_module_magic"));
-            if (!magic_fn || std::string(magic_fn()) != DVARGOSH_MODULE_MAGIC) {
-                dlclose(handle);
-                continue;
+            // Extract candidate stem name (e.g. libmod_math.dylib -> math, libmath.dylib -> math)
+            std::string stem = filename.substr(0, filename.size() - ext.size());
+            if (stem.rfind("libmod_", 0) == 0) {
+                stem = stem.substr(7);
+            } else if (stem.rfind("lib", 0) == 0) {
+                stem = stem.substr(3);
             }
 
-            auto name_fn = reinterpret_cast<ModuleNameFn>(dlsym(handle, "dvargosh_module_name"));
-            auto build_fn = reinterpret_cast<ModuleBuildIdFn>(dlsym(handle, "dvargosh_build_id"));
-            auto abi_fn = reinterpret_cast<ModuleAbiFn>(dlsym(handle, "dvargosh_abi_version"));
+            // 1. Manifest-First Discovery (Static inspection without dlopen or code execution)
+            std::vector<std::string> candidate_defs = {
+                dir_path + "/" + filename + ".def",
+                dir_path + "/" + stem + ".def",
+                dir_path + "/module.def",
+                dir_path + "/" + stem + "/module.def",
+                "build/modules/" + stem + ".def",
+                "modules/" + stem + "/module.def",
+                "development_modules/" + stem + "/module.def",
+                "build/development_modules/" + stem + "/module.def"
+            };
+
+            std::string def_name, def_version, def_abi, def_domain;
+            bool found_def = false;
+            for (const auto& dpath : candidate_defs) {
+                if (parse_module_manifest_def(dpath, def_name, def_version, def_abi, def_domain)) {
+                    found_def = true;
+                    break;
+                }
+            }
 
             DiscoveredModuleInfo info;
             info.filename = filename;
             info.full_path = full_path;
-            info.name = name_fn ? name_fn() : filename;
-            info.build_id = build_fn ? build_fn() : "unknown";
-            info.abi_version = abi_fn ? abi_fn() : "unknown";
-            info.is_valid = true;
 
-            dlclose(handle);
+            if (found_def) {
+                info.name = def_name;
+                info.build_id = "manifest:" + (def_version.empty() ? "1.0.0" : def_version);
+                info.abi_version = def_abi.empty() ? DVARGOSH_ABI_VERSION_STR : def_abi;
+                info.is_valid = true;
+            } else {
+                // No manifest found: shared object is untrusted unless signature verified
+                if (m_config.enforce_signatures) {
+                    if (m_config.secret_signing_key.empty()) {
+                        continue; // No signing key configured; untrusted binary rejected
+                    }
+                    auto it_sig = m_known_signatures.find(filename);
+                    if (it_sig == m_known_signatures.end()) {
+                        continue; // Unsigned binary rejected without dlopen
+                    }
+                    if (!Crypto::verify_file_signature(m_config.secret_signing_key, full_path, it_sig->second)) {
+                        continue; // Invalid signature; reject without dlopen
+                    }
+                }
+
+                // If signatures are not enforced or binary has verified cryptographic signature, inspect symbols
+                void* handle = dlopen(full_path.c_str(), RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
+                if (!handle) continue;
+
+                auto magic_fn = reinterpret_cast<ModuleMagicFn>(dlsym(handle, "dvargosh_module_magic"));
+                if (!magic_fn || std::string(magic_fn()) != DVARGOSH_MODULE_MAGIC) {
+                    dlclose(handle);
+                    continue;
+                }
+
+                auto name_fn = reinterpret_cast<ModuleNameFn>(dlsym(handle, "dvargosh_module_name"));
+                auto build_fn = reinterpret_cast<ModuleBuildIdFn>(dlsym(handle, "dvargosh_build_id"));
+                auto abi_fn = reinterpret_cast<ModuleAbiFn>(dlsym(handle, "dvargosh_abi_version"));
+
+                info.name = name_fn ? name_fn() : filename;
+                info.build_id = build_fn ? build_fn() : "unknown";
+                info.abi_version = abi_fn ? abi_fn() : "unknown";
+                info.is_valid = true;
+
+                dlclose(handle);
+            }
 
             m_discovered_by_name[info.name] = info;
             m_discovered_by_filename[info.filename] = info;
@@ -231,10 +362,23 @@ Result<void> ModuleLoader::load_from_file(
         if (m_config.secret_signing_key.empty()) {
             return Result<void>::failure(StatusCode::SignatureInvalid, "Signature verification enforced but no signing key configured");
         }
-        if (signature_override.empty()) {
+        std::string effective_sig = signature_override;
+        if (effective_sig.empty()) {
+            std::string filename = filepath;
+            auto last_slash = filename.find_last_of("/\\");
+            if (last_slash != std::string::npos) {
+                filename = filename.substr(last_slash + 1);
+            }
+            std::lock_guard<std::mutex> lock(m_mutex);
+            auto it = m_known_signatures.find(filename);
+            if (it != m_known_signatures.end()) {
+                effective_sig = it->second;
+            }
+        }
+        if (effective_sig.empty()) {
             return Result<void>::failure(StatusCode::SignatureInvalid, "Signature verification failed: no signature provided for module " + filepath);
         }
-        bool valid = Crypto::verify_file_signature(m_config.secret_signing_key, filepath, signature_override);
+        bool valid = Crypto::verify_file_signature(m_config.secret_signing_key, filepath, effective_sig);
         if (!valid) {
             return Result<void>::failure(StatusCode::SignatureInvalid, "Cryptographic signature verification failed for module " + filepath);
         }
@@ -289,14 +433,11 @@ Result<void> ModuleLoader::load_from_file(
     }
 
     // 6. Security Policy & Container Context
-    SecurityPolicy policy = custom_policy ? *custom_policy : m_config.default_policy;
-    // Intersect or ensure policy accommodates requested permissions if granted
-    for (const auto& p_str : manifest.requested_permissions.to_strings()) {
-        Permission p = string_to_permission(p_str);
-        if (p != Permission::None && m_config.default_policy.permissions().has(p)) {
-            policy.permissions().grant(p);
-        }
-    }
+    SecurityPolicy base_policy = custom_policy ? *custom_policy : m_config.default_policy;
+    // Effective permissions must strictly be the INTERSECTION of the base policy ceiling and the module's requested permissions.
+    // An individual restrictive custom policy can never be expanded by a manifest request.
+    PermissionSet effective_perms = base_policy.permissions().intersect_with(manifest.requested_permissions);
+    SecurityPolicy policy(effective_perms, base_policy.max_memory_bytes());
 
     size_t def_quota = read_module_def_quota_bytes(mod_name, filepath);
     size_t secured_mem_size = (def_quota > 0) ? def_quota : m_config.secured_memory_size;
@@ -373,7 +514,9 @@ Result<void> ModuleLoader::load_static_module(
         }
     }
 
-    SecurityPolicy policy = custom_policy ? *custom_policy : m_config.default_policy;
+    SecurityPolicy base_policy = custom_policy ? *custom_policy : m_config.default_policy;
+    PermissionSet effective_perms = base_policy.permissions().intersect_with(manifest.requested_permissions);
+    SecurityPolicy policy(effective_perms, base_policy.max_memory_bytes());
     auto ctx_res = m_di->create_module_context(mod_name, manifest.domain, policy, m_config.secured_memory_size);
     if (!ctx_res.is_ok()) {
         return Result<void>::failure(ctx_res.status(), ctx_res.error_message());
