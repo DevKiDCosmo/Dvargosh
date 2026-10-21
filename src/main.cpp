@@ -296,7 +296,7 @@ int main(int argc, char** argv) {
                 if (res.is_ok()) std::cout << "Unloaded module '" << mod_name << "'.\n";
                 else std::cerr << "Failed: " << res.error_message() << "\n";
             }
-        } else if (cmd == "load_all") {
+        } else if (cmd == "load_all" || cmd == "ll") {
             auto disc_res = loader.auto_load_all(secret_key);
             auto cat_res = catalog.load_all(loader, module_dir, secret_key);
             size_t total = (disc_res.is_ok() ? disc_res.value() : 0);
@@ -500,7 +500,7 @@ int main(int argc, char** argv) {
             loader.dump_report();
         } else if (cmd == "resources") {
             di->resource_manager()->dump_report();
-        } else if (cmd == "invoke") {
+        } else if (cmd == "invoke" || cmd == "i") {
             std::string method;
             iss >> method;
             std::vector<Value> args;

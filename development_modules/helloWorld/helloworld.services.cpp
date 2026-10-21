@@ -101,13 +101,26 @@ std::string invokeothers() {
 }
 
 extern void* just_true();
-DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") {
-    auto* ctx = Runtime::get_context("hello_world"); // TODO: get_context is not secured
+DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") { // Next security vulnerability is that every, domain, scope of every module is only in its own module true. Only explicit are allowed.
+    auto* ctx = Runtime::get_context("logger"); // TODO: get_context is not secured
+    // Audit: Using a fake context result in invalid
+    // Using a context from another module will run normally. Here is ownership despair. Or ownsership fraud.
+
+
     if (!ctx) return Result<Value>::failure(StatusCode(23), "Error: No active module context");
+    
+    std::string caller = ExecutionContext::current_domain();
+    if (ctx->domain_manager()->is_cross_domain_blacklisted(caller, "value")) {
+        return Result<Value>::failure(StatusCode(24), "Error: Calling domain is explicitly blacklisted");
+    }
+    
     auto res = ctx->call("logger.debug", {Value("just_true called")});
     if (!res.is_ok()) {
         std::cerr << "Invoke warning/error: " << res.error_message() << std::endl;
     }
+
+    ctx->call("logger.debug", {Value(caller + " called just_true")});
+
     std::cout << "just_true called" << std::endl;
     return Result<Value>::success(Value(true));
 }

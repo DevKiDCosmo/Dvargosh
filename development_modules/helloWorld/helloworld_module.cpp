@@ -54,7 +54,8 @@ public:
 
             // 4. Domain: "value" (for just_true) with permission to access core logging
             dm->create_domain("value", SecurityPolicy::standard());
-            dm->allow_cross_domain("value", "core");
+            dm->allow_cross_domain("value", "core"); // TODO: WARNING POSSIBLE SECURITY VULNERABILITY
+            // ARD: This is for self regulatory.
         }
 
         register_auto_functions(ctx);
