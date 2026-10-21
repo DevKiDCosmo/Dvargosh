@@ -36,7 +36,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build build-essential clang
+          sudo apt-get install -y cmake ninja-build build-essential clang python
 
       - name: Configure CMake
         env:
@@ -67,7 +67,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: actions/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build Multi-Stage Docker Image & Run In-Container Tests
         uses: docker/build-push-action@v5
