@@ -48,6 +48,8 @@ public:
 
             // 3. Normal domain: "captives:hello_world"
             dm->create_domain("captives:hello_world", SecurityPolicy::standard());
+            // Explicitly authorize captives:hello_world to access demo_pkg:vault services
+            dm->allow_cross_domain("captives:hello_world", "demo_pkg:vault");
         }
 
         register_auto_functions(ctx);

@@ -211,7 +211,7 @@
       ]
     },
     {
-      "name": "helloworld",
+      "name": "hello_world",
       "folder_name": "helloWorld",
       "version": "1.0.0",
       "description": "Hello World",
@@ -244,9 +244,9 @@
             "scoped_domain_enforcement": true
           },
           "rpc_syntax": "`registry->invoke(\"hello_world\", {...})`",
-          "typed_proxy_syntax": "`HelloworldProxy::hello_world(ctx, ...)`",
+          "typed_proxy_syntax": "`HelloWorldProxy::hello_world(ctx, ...)`",
           "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"hello_world\")`",
-          "hover_tooltip": "### Dvargosh Service: `hello_world`\n* **Domain**: `captives:hello_world`\n* **Description**: Pipeline-attributed service method 'hello_world'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"hello_world\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::hello_world(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"hello_world\");\n```\n"
+          "hover_tooltip": "### Dvargosh Service: `hello_world`\n* **Domain**: `captives:hello_world`\n* **Description**: Pipeline-attributed service method 'hello_world'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"hello_world\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloWorldProxy::hello_world(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"hello_world\");\n```\n"
         },
         {
           "name": "get_safe_vault_key",
@@ -263,9 +263,9 @@
             "scoped_domain_enforcement": true
           },
           "rpc_syntax": "`registry->invoke(\"get_safe_vault_key\", {...})`",
-          "typed_proxy_syntax": "`HelloworldProxy::get_safe_vault_key(ctx, ...)`",
+          "typed_proxy_syntax": "`HelloWorldProxy::get_safe_vault_key(ctx, ...)`",
           "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"get_safe_vault_key\")`",
-          "hover_tooltip": "### Dvargosh Service: `get_safe_vault_key`\n* **Domain**: `captives:vault`\n* **Description**: Pipeline-attributed service method 'get_safe_vault_key'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"get_safe_vault_key\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::get_safe_vault_key(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"get_safe_vault_key\");\n```\n"
+          "hover_tooltip": "### Dvargosh Service: `get_safe_vault_key`\n* **Domain**: `captives:vault`\n* **Description**: Pipeline-attributed service method 'get_safe_vault_key'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"get_safe_vault_key\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloWorldProxy::get_safe_vault_key(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"get_safe_vault_key\");\n```\n"
         },
         {
           "name": "intruder_access_safe_space",
@@ -282,9 +282,9 @@
             "scoped_domain_enforcement": true
           },
           "rpc_syntax": "`registry->invoke(\"intruder_access_safe_space\", {...})`",
-          "typed_proxy_syntax": "`HelloworldProxy::intruder_access_safe_space(ctx, ...)`",
+          "typed_proxy_syntax": "`HelloWorldProxy::intruder_access_safe_space(ctx, ...)`",
           "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"intruder_access_safe_space\")`",
-          "hover_tooltip": "### Dvargosh Service: `intruder_access_safe_space`\n* **Domain**: `captives:intruder`\n* **Description**: Pipeline-attributed service method 'intruder_access_safe_space'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"intruder_access_safe_space\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::intruder_access_safe_space(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"intruder_access_safe_space\");\n```\n"
+          "hover_tooltip": "### Dvargosh Service: `intruder_access_safe_space`\n* **Domain**: `captives:intruder`\n* **Description**: Pipeline-attributed service method 'intruder_access_safe_space'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"intruder_access_safe_space\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloWorldProxy::intruder_access_safe_space(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"intruder_access_safe_space\");\n```\n"
         },
         {
           "name": "intruder_tamper_attempt",
@@ -301,9 +301,9 @@
             "scoped_domain_enforcement": true
           },
           "rpc_syntax": "`registry->invoke(\"intruder_tamper_attempt\", {...})`",
-          "typed_proxy_syntax": "`HelloworldProxy::intruder_tamper_attempt(ctx, ...)`",
+          "typed_proxy_syntax": "`HelloWorldProxy::intruder_tamper_attempt(ctx, ...)`",
           "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"intruder_tamper_attempt\")`",
-          "hover_tooltip": "### Dvargosh Service: `intruder_tamper_attempt`\n* **Domain**: `captives:intruder`\n* **Description**: Pipeline-attributed service method 'intruder_tamper_attempt'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"intruder_tamper_attempt\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::intruder_tamper_attempt(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"intruder_tamper_attempt\");\n```\n"
+          "hover_tooltip": "### Dvargosh Service: `intruder_tamper_attempt`\n* **Domain**: `captives:intruder`\n* **Description**: Pipeline-attributed service method 'intruder_tamper_attempt'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"intruder_tamper_attempt\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloWorldProxy::intruder_tamper_attempt(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"intruder_tamper_attempt\");\n```\n"
         },
         {
           "name": "intruder_invoke_vault",
@@ -320,9 +320,9 @@
             "scoped_domain_enforcement": true
           },
           "rpc_syntax": "`registry->invoke(\"intruder_invoke_vault\", {...})`",
-          "typed_proxy_syntax": "`HelloworldProxy::intruder_invoke_vault(ctx, ...)`",
+          "typed_proxy_syntax": "`HelloWorldProxy::intruder_invoke_vault(ctx, ...)`",
           "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"intruder_invoke_vault\")`",
-          "hover_tooltip": "### Dvargosh Service: `intruder_invoke_vault`\n* **Domain**: `captives:intruder`\n* **Description**: Pipeline-attributed service method 'intruder_invoke_vault'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"intruder_invoke_vault\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::intruder_invoke_vault(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"intruder_invoke_vault\");\n```\n"
+          "hover_tooltip": "### Dvargosh Service: `intruder_invoke_vault`\n* **Domain**: `captives:intruder`\n* **Description**: Pipeline-attributed service method 'intruder_invoke_vault'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"intruder_invoke_vault\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloWorldProxy::intruder_invoke_vault(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"intruder_invoke_vault\");\n```\n"
         },
         {
           "name": "invokeothers",
@@ -339,9 +339,9 @@
             "scoped_domain_enforcement": true
           },
           "rpc_syntax": "`registry->invoke(\"invokeothers\", {...})`",
-          "typed_proxy_syntax": "`HelloworldProxy::invokeothers(ctx, ...)`",
+          "typed_proxy_syntax": "`HelloWorldProxy::invokeothers(ctx, ...)`",
           "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"invokeothers\")`",
-          "hover_tooltip": "### Dvargosh Service: `invokeothers`\n* **Domain**: `captives:hello_world`\n* **Description**: Pipeline-attributed service method 'invokeothers'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"invokeothers\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloworldProxy::invokeothers(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"invokeothers\");\n```\n"
+          "hover_tooltip": "### Dvargosh Service: `invokeothers`\n* **Domain**: `captives:hello_world`\n* **Description**: Pipeline-attributed service method 'invokeothers'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"invokeothers\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nHelloWorldProxy::invokeothers(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"invokeothers\");\n```\n"
         }
       ]
     },

@@ -16,9 +16,14 @@ std::string get_safe_vault_key() {
     auto* ctx = Runtime::get_context("hello_world");
     if (!ctx || !ctx->domain_manager()) return "ERROR_NO_CONTEXT";
 
-    // TODO: Check if the calling domain is in allowed list or on blacklist.
+    // 1. Explicit domain security check: verify caller is neither blacklisted nor unauthorized
+    std::string caller = ExecutionContext::current_domain();
+    if (ctx->domain_manager()->is_cross_domain_blacklisted(caller, "captives:vault")) {
+        return "ACCESS_DENIED: Calling domain '" + caller + "' is explicitly blacklisted";
+    }
 
-    // Authorized access: caller domain is automatically resolved as "captives:vault"
+    // 2. Authorized access: caller domain is automatically resolved as ExecutionContext::current_domain()
+    // and verified by get_domain_vault() using the permission matrix (blacklist + whitelist)
     auto vault_res = ctx->domain_manager()->get_domain_vault("captives:vault", "captives_vault");
     if (!vault_res.is_ok()) {
         return "ACCESS_DENIED: " + vault_res.error_message();

@@ -494,24 +494,24 @@ int main() {
     assert(rot13_txt == "CvcryvarEbmxf");
 
 #if __has_include("dvargosh/generated/helloWorld_interface.hpp")
-    std::string hw_res = HelloworldProxy::hello_world(*di, "Developer");
-    std::cout << "  * HelloworldProxy::hello_world -> " << hw_res << "\\n";
+    std::string hw_res = HelloWorldProxy::hello_world(*di, "Developer");
+    std::cout << "  * HelloWorldProxy::hello_world -> " << hw_res << "\\n";
     assert(hw_res == "HELLO_WORLD_Developer");
 
-    std::string vault_key = HelloworldProxy::get_safe_vault_key(*di);
-    std::cout << "  * HelloworldProxy::get_safe_vault_key -> " << vault_key << "\\n";
+    std::string vault_key = HelloWorldProxy::get_safe_vault_key(*di);
+    std::cout << "  * HelloWorldProxy::get_safe_vault_key -> " << vault_key << "\\n";
     assert(vault_key.find("SECURE_KEY_NAM_CAPTIVES") != std::string::npos);
 
-    std::string intruder_space = HelloworldProxy::intruder_access_safe_space(*di);
-    std::cout << "  * HelloworldProxy::intruder_access_safe_space -> " << intruder_space << "\\n";
+    std::string intruder_space = HelloWorldProxy::intruder_access_safe_space(*di);
+    std::cout << "  * HelloWorldProxy::intruder_access_safe_space -> " << intruder_space << "\\n";
     assert(intruder_space.rfind("REJECTED:", 0) == 0);
 
-    std::string intruder_rpc = HelloworldProxy::intruder_invoke_vault(*di);
-    std::cout << "  * HelloworldProxy::intruder_invoke_vault -> " << intruder_rpc << "\\n";
+    std::string intruder_rpc = HelloWorldProxy::intruder_invoke_vault(*di);
+    std::cout << "  * HelloWorldProxy::intruder_invoke_vault -> " << intruder_rpc << "\\n";
     assert(intruder_rpc.rfind("REJECTED:", 0) == 0);
 
-    std::string others = HelloworldProxy::invokeothers(*di);
-    std::cout << "  * HelloworldProxy::invokeothers -> " << others << "\\n";
+    std::string others = HelloWorldProxy::invokeothers(*di);
+    std::cout << "  * HelloWorldProxy::invokeothers -> " << others << "\\n";
     assert(!others.empty() && others.find("Error") == std::string::npos);
 #endif
 
@@ -878,8 +878,10 @@ def main():
     # 2. Process development modules
     dev_modules = []
     target_dev_dir = BUILD_DIR / "development_modules"
-    if not target_dev_dir.exists() and DEV_MODULES_DIR.exists():
-        target_dev_dir = DEV_MODULES_DIR
+    if DEV_MODULES_DIR.exists():
+        target_dev_dir.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copytree(DEV_MODULES_DIR, target_dev_dir, dirs_exist_ok=True)
 
     if target_dev_dir.exists():
         for item in sorted(target_dev_dir.iterdir()):

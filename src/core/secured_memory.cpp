@@ -72,7 +72,7 @@ void SecuredMemorySpace::unload() {
             // Restore write protection so memory can be scrubbed
             mprotect(m_usable_memory, m_usable_size, PROT_READ | PROT_WRITE);
             if (m_config.scrub_on_destroy) {
-                scrub();
+                secure_zero(m_usable_memory, m_usable_size);
             }
             if (m_config.lock_in_ram) {
                 munlock(m_usable_memory, m_usable_size);
@@ -106,10 +106,7 @@ SecuredMemorySpace::SecuredMemorySpace(SecuredMemorySpace&& o) noexcept {
 
 SecuredMemorySpace& SecuredMemorySpace::operator=(SecuredMemorySpace&& o) noexcept {
     if (this != &o) {
-        if (m_total_mapped) {
-            if (m_config.scrub_on_destroy && m_usable_memory) scrub();
-            munmap(m_total_mapped, m_total_mapped_size);
-        }
+        unload();
         std::lock_guard<std::mutex> lock(o.m_mutex);
         m_config = std::move(o.m_config);
         m_total_mapped = o.m_total_mapped;

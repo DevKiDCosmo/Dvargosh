@@ -132,3 +132,77 @@ TEST_CASE(test_domain_space_cross_domain_access_and_rejection) {
     ASSERT_FALSE(reject_res.is_ok());
     ASSERT_EQ(reject_res.status(), StatusCode::PermissionDenied);
 }
+
+TEST_CASE(test_domain_blacklist_takes_precedence) {
+    DomainManager dm;
+    dm.create_domain("vault_zone", SecurityPolicy::strict());
+    dm.create_domain("client_zone", SecurityPolicy::standard());
+
+    // 1. Grant access via whitelist
+    auto allow_res = dm.allow_cross_domain("client_zone", "vault_zone");
+    ASSERT_TRUE(allow_res.is_ok());
+    ASSERT_TRUE(dm.check_cross_domain_access("client_zone", "vault_zone"));
+
+    // 2. Explicitly blacklist vault_zone for client_zone
+    auto bl_res = dm.blacklist_domain("client_zone", "vault_zone");
+    ASSERT_TRUE(bl_res.is_ok());
+    ASSERT_TRUE(dm.is_cross_domain_blacklisted("client_zone", "vault_zone"));
+
+    // Blacklist MUST override whitelist
+    ASSERT_FALSE(dm.check_cross_domain_access("client_zone", "vault_zone"));
+
+    // 3. Even with universal wildcard access granted, blacklist strictly takes precedence
+    dm.allow_cross_domain("client_zone", "*");
+    ASSERT_FALSE(dm.check_cross_domain_access("client_zone", "vault_zone"));
+
+    // 4. Removing from blacklist restores access via whitelist/wildcard
+    dm.unblacklist_domain("client_zone", "vault_zone");
+    ASSERT_FALSE(dm.is_cross_domain_blacklisted("client_zone", "vault_zone"));
+    ASSERT_TRUE(dm.check_cross_domain_access("client_zone", "vault_zone"));
+}
+
+TEST_CASE(test_domain_secured_space_and_vaults_unloader) {
+    DomainManager dm;
+    auto cr_res = dm.create_domain("secure_tier", SecurityPolicy::strict(), 64 * 1024, true);
+    ASSERT_TRUE(cr_res.is_ok());
+    ASSERT_TRUE(dm.get_domain_space("secure_tier") != nullptr);
+
+    // Create vault in secure_tier
+    VaultConfig vcfg;
+    vcfg.name = "tier_vault";
+    vcfg.owner_domain = "secure_tier";
+    vcfg.owner_module = "tier_mod";
+    vcfg.capacity_bytes = 16 * 1024;
+    auto v_res = dm.create_vault(vcfg);
+    ASSERT_TRUE(v_res.is_ok());
+
+    // Unload secured space
+    auto unl_space = dm.unload_domain_space("secure_tier");
+    ASSERT_TRUE(unl_space.is_ok());
+    ASSERT_TRUE(dm.get_domain_space("secure_tier") == nullptr);
+
+    // Unload vaults
+    auto unl_vaults = dm.unload_domain_vaults("secure_tier");
+    ASSERT_TRUE(unl_vaults.is_ok());
+    ASSERT_TRUE(dm.get_vault("tier_vault") == nullptr);
+}
+
+TEST_CASE(test_call_stack_hmac_tamper_detection) {
+    ASSERT_TRUE(ExecutionContext::is_system());
+    ASSERT_EQ(ExecutionContext::current_domain(), "system");
+
+    {
+        ScopedCallFrame frame("mod_alpha", "dom_alpha");
+        ASSERT_FALSE(ExecutionContext::is_system());
+        ASSERT_EQ(ExecutionContext::current_domain(), "dom_alpha");
+        ASSERT_EQ(ExecutionContext::current_module(), "mod_alpha");
+
+        // Integrity verification passes for authentic frames
+        auto valid_res = ExecutionContext::validate_stack_integrity();
+        ASSERT_TRUE(valid_res.is_ok());
+    }
+
+    // Frame cleanly popped
+    ASSERT_TRUE(ExecutionContext::is_system());
+    ASSERT_EQ(ExecutionContext::current_domain(), "system");
+}

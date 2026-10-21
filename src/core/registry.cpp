@@ -193,15 +193,13 @@ Result<Value> Registry::invoke(
     std::string effective_caller_domain = caller_domain;
     std::string effective_caller_module = caller_module;
 
-    if (effective_caller_domain.empty() || effective_caller_domain == "system") {
-        if (!ExecutionContext::is_system() && ExecutionContext::current_domain() != "system") {
-            effective_caller_domain = ExecutionContext::current_domain();
-            effective_caller_module = ExecutionContext::current_module();
-        }
+    if (ExecutionContext::frame_depth() > 0) {
+        effective_caller_domain = ExecutionContext::current_domain();
+        effective_caller_module = ExecutionContext::current_module();
     } else {
-        auto tamper_res = ExecutionContext::verify_not_tampered(effective_caller_domain);
-        if (!tamper_res.is_ok()) {
-            return Result<Value>::failure(tamper_res.status(), tamper_res.error_message());
+        if (effective_caller_domain.empty()) {
+            effective_caller_domain = "system";
+            effective_caller_module = "system";
         }
     }
 
