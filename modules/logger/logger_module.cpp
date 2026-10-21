@@ -75,6 +75,51 @@ public:
         );
         if (!meth_res.is_ok()) return meth_res;
 
+        // Register dynamic RPC callable method "logger.warn"
+        auto meth_res_warn = ctx.register_method(
+            "logger.warn",
+            "Logs a warning via dynamic global calling",
+            [this](const std::vector<Value>& args) -> Result<Value> {
+                if (args.empty()) {
+                    return Result<Value>::failure(StatusCode::InvalidArg, "logger.warn requires at least 1 string argument");
+                }
+                std::string msg = args[0].to_string();
+                m_logger->warn("[RPC] " + msg);
+                return Result<Value>::success(Value(true));
+            }
+        );
+        if (!meth_res_warn.is_ok()) return meth_res_warn;
+
+        // Register dynamic RPC callable method "logger.warn"
+        auto meth_res_error = ctx.register_method(
+            "logger.error",
+            "Logs an error via dynamic global calling",
+            [this](const std::vector<Value>& args) -> Result<Value> {
+                if (args.empty()) {
+                    return Result<Value>::failure(StatusCode::InvalidArg, "logger.error requires at least 1 string argument");
+                }
+                std::string msg = args[0].to_string();
+                m_logger->error("[RPC] " + msg);
+                return Result<Value>::success(Value(true));
+            }
+        );
+        if (!meth_res_error.is_ok()) return meth_res_error;
+
+        // Register dynamic RPC callable method "logger.warn"
+        auto meth_res_debug = ctx.register_method(
+            "logger.debug",
+            "Logs a debug message via dynamic global calling",
+            [this](const std::vector<Value>& args) -> Result<Value> {
+                if (args.empty()) {
+                    return Result<Value>::failure(StatusCode::InvalidArg, "logger.debug requires at least 1 string argument");
+                }
+                std::string msg = args[0].to_string();
+                m_logger->debug("[RPC] " + msg);
+                return Result<Value>::success(Value(true));
+            }
+        );
+        if (!meth_res_debug.is_ok()) return meth_res_debug;
+
         m_logger->info("LoggerModule loaded successfully into Dvargosh runtime.");
         return Result<void>::success();
     }
