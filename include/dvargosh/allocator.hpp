@@ -54,6 +54,7 @@ public:
 
     void set_max_capacity(size_t max_bytes) noexcept { m_max_capacity_bytes = max_bytes; }
     size_t max_capacity() const noexcept { return m_max_capacity_bytes; }
+    size_t allocated_bytes() const noexcept { return get_stats().current_allocated_bytes; }
 
 private:
     IAllocator* m_upstream;

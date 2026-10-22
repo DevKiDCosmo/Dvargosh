@@ -36,6 +36,8 @@ struct DiscoveredModuleInfo {
     std::string full_path;
     std::string build_id;
     std::string abi_version;
+    std::string domain;
+    std::vector<std::string> supported_domains;
     bool is_valid = false;
 };
 

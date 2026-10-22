@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <fstream>
 #include <cstdint>
 #include <cstring>
 #include <dlfcn.h>
@@ -174,22 +175,74 @@ struct ModuleHeader {
         return Result<ModuleHeader>::success(std::move(h));
     }
 
+    /**
+     * @brief Reads and validates module header from an opened library handle.
+     * Prioritizes direct read-only data (.rodata / rd) static const symbol inspection.
+     */
     static Result<ModuleHeader> read_from_handle(void* lib_handle) {
         if (!lib_handle) {
             return Result<ModuleHeader>::failure(StatusCode::NullPointer, "Library handle is null");
         }
-        // 1. Try exported accessor function
-        auto fn = reinterpret_cast<const ModuleHeaderRaw* (*)()>(dlsym(lib_handle, "dvargosh_get_module_header"));
-        if (fn) {
-            const ModuleHeaderRaw* raw = fn();
-            if (raw) return from_raw(*raw);
-        }
-        // 2. Try exported static const symbol
+        // 1. Try exported static const symbol (directly in .rodata / rd, zero code execution)
         auto* raw = reinterpret_cast<const ModuleHeaderRaw*>(dlsym(lib_handle, "dvargosh_module_header"));
         if (raw) {
             return from_raw(*raw);
         }
+        // 2. Try exported accessor function
+        auto fn = reinterpret_cast<const ModuleHeaderRaw* (*)()>(dlsym(lib_handle, "dvargosh_get_module_header"));
+        if (fn) {
+            const ModuleHeaderRaw* raw_fn = fn();
+            if (raw_fn) return from_raw(*raw_fn);
+        }
         return Result<ModuleHeader>::failure(StatusCode::SymbolNotFound, "No Dvargosh module header found in library symbols");
+    }
+
+    /**
+     * @brief Direct zero-execution inspection of module binary from disk.
+     * Scans and parses the embedded ModuleHeaderRaw struct from .rodata / read-only data without dlopen().
+     */
+    static Result<ModuleHeader> read_from_file(const std::string& filepath) {
+        std::ifstream file(filepath, std::ios::binary);
+        if (!file.is_open()) {
+            return Result<ModuleHeader>::failure(StatusCode::NotFound, "Cannot open library file: " + filepath);
+        }
+
+        file.seekg(0, std::ios::end);
+        std::streamsize file_size = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        const size_t header_sz = sizeof(ModuleHeaderRaw);
+        if (file_size < static_cast<std::streamsize>(header_sz)) {
+            return Result<ModuleHeader>::failure(StatusCode::TypeMismatch, "File smaller than ModuleHeaderRaw");
+        }
+
+        std::vector<uint8_t> buffer(static_cast<size_t>(file_size));
+        if (!file.read(reinterpret_cast<char*>(buffer.data()), file_size)) {
+            return Result<ModuleHeader>::failure(StatusCode::LoadFailed, "Failed to read library file: " + filepath);
+        }
+
+        const uint64_t magic = DVARGOSH_HEADER_MAGIC_V1;
+        for (size_t i = 0; i + header_sz <= buffer.size(); ++i) {
+            if (*reinterpret_cast<const uint64_t*>(buffer.data() + i) == magic) {
+                const auto* candidate = reinterpret_cast<const ModuleHeaderRaw*>(buffer.data() + i);
+                if (candidate->header_version == 1 && candidate->header_size == sizeof(ModuleHeaderRaw)) {
+                    auto res = from_raw(*candidate);
+                    if (res.is_ok()) {
+                        return res;
+                    }
+                }
+            }
+        }
+
+        // Fallback: safe dlopen + symbol inspection
+        dlerror();
+        void* handle = dlopen(filepath.c_str(), RTLD_LAZY | RTLD_LOCAL);
+        if (!handle) {
+            return Result<ModuleHeader>::failure(StatusCode::SymbolNotFound, "No Dvargosh module header found in binary");
+        }
+        auto res = read_from_handle(handle);
+        dlclose(handle);
+        return res;
     }
 };
 

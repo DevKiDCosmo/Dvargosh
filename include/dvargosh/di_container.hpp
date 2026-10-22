@@ -18,7 +18,6 @@ namespace dvargosh {
 
 class DIContainer;
 class CommandMemory;
-class SubContext;
 
 // Injected Context provided to each loaded module
 class ModuleContext {
@@ -117,45 +116,6 @@ public:
         return m_resource_mgr->register_object<T>(name, m_module_name, std::move(obj));
     }
 
-    // --- SubContext Room Space Management ---
-
-    /**
-     * @brief Explicitly creates an isolated SubContext room space within this module.
-     * @param subcontext_name Unique name of the subcontext within this module.
-     * @param capacity_bytes Memory size (0 for dynamic heap, > 0 for hardware-guarded page space).
-     * @param use_guard_pages Whether to surround allocated space with PROT_NONE guard pages.
-     * @return Result containing pointer to the created SubContext, or failure if duplicate.
-     */
-    Result<SubContext*> create_subcontext(
-        const std::string& subcontext_name,
-        size_t capacity_bytes = 0,
-        bool use_guard_pages = true
-    );
-
-    /**
-     * @brief Retrieves a SubContext by its local name.
-     * @param subcontext_name Local subcontext name.
-     * @return Pointer to SubContext, or nullptr if not found.
-     */
-    SubContext* get_subcontext(const std::string& subcontext_name);
-
-    /**
-     * @brief Retrieves the SubContext hosting a specific subsystem domain.
-     * @param domain_name Subsystem domain name.
-     * @return Pointer to SubContext, or fallback default subcontext if unassigned.
-     */
-    SubContext* get_subcontext_for_domain(const std::string& domain_name);
-
-    /**
-     * @brief Retrieves a SubContext by its internal HMAC-SHA256 tracking token.
-     * @param hash Cryptographic tracking key.
-     * @return Pointer to SubContext, or nullptr if not found.
-     */
-    SubContext* get_subcontext_by_hash(const std::string& hash);
-
-    /** @brief Returns pointers to all active SubContexts within this module. */
-    std::vector<SubContext*> list_subcontexts() const;
-
 private:
     std::string m_module_name;
     std::string m_domain_name;
@@ -167,11 +127,6 @@ private:
     std::unique_ptr<SecuredMemorySpace> m_secured_memory;
     std::unique_ptr<TrackedAllocator> m_tracked_allocator;
     std::unique_ptr<ArenaAllocator> m_arena;
-
-    mutable std::mutex m_subcontext_mutex;
-    std::unordered_map<std::string, std::shared_ptr<SubContext>> m_subcontexts;
-    std::unordered_map<std::string, std::string> m_domain_to_subcontext;
-    std::unordered_map<std::string, SubContext*> m_hash_to_subcontext;
 };
 
 // Global Dependency Injection Container

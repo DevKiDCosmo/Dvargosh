@@ -103,66 +103,6 @@ public:
     bool is_cross_domain_blacklisted(const std::string& from_domain, const std::string& to_domain) const;
     bool check_cross_domain_access(const std::string& from_domain, const std::string& to_domain) const;
 
-    /**
-     * @brief Inter-module coarse permission grant.
-     * Grants permission for callers in from_domain to access any exported service in to_module.
-     * Configured as a bidirectional cross-module grant between from_domain and to_module.
-     * @param from_domain Calling subsystem domain.
-     * @param to_module Target module name.
-     */
-    Result<void> allow_cross_module(const std::string& from_domain, const std::string& to_module);
-
-    /**
-     * @brief Inter-module fine-grained permission grant.
-     * Grants unidirectional permission for from_domain to access specifically target_domain in target_module.
-     * @param from_domain Calling subsystem domain.
-     * @param target_domain Target subsystem domain in target_module.
-     * @param target_module Target module name.
-     */
-    Result<void> allow_cross_module_specific(
-        const std::string& from_domain,
-        const std::string& target_domain,
-        const std::string& target_module
-    );
-
-    /**
-     * @brief Ingress permission grant.
-     * Explicitly allows incoming calls from from_module.
-     * @param from_module Calling module permitted to enter.
-     */
-    Result<void> allow_access_to(const std::string& from_module);
-
-    /**
-     * @brief Ingress fine-grained permission grant.
-     * Explicitly allows incoming calls specifically from from_domain of from_module.
-     * @param from_domain Calling subsystem domain.
-     * @param from_module Calling module name.
-     */
-    Result<void> allow_access_to_specific(const std::string& from_domain, const std::string& from_module);
-
-    /**
-     * @brief Ingress wildcard grant.
-     * Allows all incoming cross-module calls without requiring explicit per-module allow rules.
-     */
-    Result<void> allow_all_income();
-
-    /**
-     * @brief Unified cross-domain and cross-module execution access validator.
-     * Evaluates wildcard openness, system privilege, blacklists, intra-module unidirectional rules,
-     * inter-module egress grants, and inter-module ingress grants.
-     * @param from_module Source module initiating the execution.
-     * @param from_domain Source subsystem domain initiating the execution.
-     * @param to_module Target module hosting the service.
-     * @param to_domain Target subsystem domain hosting the service.
-     * @return true if execution is permitted, false otherwise.
-     */
-    bool check_execution_access(
-        const std::string& from_module,
-        const std::string& from_domain,
-        const std::string& to_module,
-        const std::string& to_domain
-    ) const;
-
     Result<void> unload_domain_space(const std::string& domain_name);
     Result<void> unload_domain_vaults(const std::string& domain_name);
 
@@ -190,14 +130,6 @@ public:
 private:
     mutable std::mutex m_mutex;
     std::unordered_map<std::string, std::unique_ptr<Domain>> m_domains;
-
-    // Isolation Matrix Storage
-    bool m_allow_all_income = false;
-    std::unordered_map<std::string, std::unordered_set<std::string>> m_intra_domain_allows;
-    std::unordered_map<std::string, std::unordered_set<std::string>> m_cross_module_allows;
-    std::unordered_map<std::string, std::unordered_map<std::string, std::unordered_set<std::string>>> m_cross_module_specific_allows;
-    std::unordered_set<std::string> m_ingress_allowed_modules;
-    std::unordered_map<std::string, std::unordered_set<std::string>> m_ingress_specific_allows;
 };
 
 Result<std::unique_ptr<SecuredMemorySpace>> init_domain_secured_space(

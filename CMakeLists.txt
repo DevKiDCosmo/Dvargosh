@@ -50,7 +50,6 @@ set(CORE_SOURCES
     src/core/execution_context.cpp
     src/core/command_memory.cpp
     src/core/vault.cpp
-    src/core/subcontext.cpp
 )
 
 add_library(dvargosh_core SHARED ${CORE_SOURCES})
@@ -115,7 +114,7 @@ set(CORE_TEST_SOURCES
     tests/test_module_lifecycle.cpp
     tests/test_violations.cpp
     tests/test_domains.cpp
-    tests/test_subcontext_isolation.cpp
+    tests/test_isolation_and_secure_memory.cpp
 )
 
 set(MODULE_TEST_SOURCES

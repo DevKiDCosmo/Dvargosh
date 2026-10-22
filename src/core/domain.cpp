@@ -176,9 +176,6 @@ bool DomainManager::has_domain(const std::string& domain_name) const {
 
 Result<void> DomainManager::allow_cross_domain(const std::string& from_domain, const std::string& to_domain) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    // Unidirectional intra-module grant
-    m_intra_domain_allows[from_domain].insert(to_domain);
-
     auto it = m_domains.find(from_domain);
     if (it == m_domains.end()) {
         // Auto-create domain with standard policy if it does not exist yet
@@ -191,134 +188,19 @@ Result<void> DomainManager::allow_cross_domain(const std::string& from_domain, c
     return Result<void>::success();
 }
 
-Result<void> DomainManager::allow_cross_module(const std::string& from_domain, const std::string& to_module) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    // Bidirectional cross-module grant between from_domain and to_module
-    m_cross_module_allows[from_domain].insert(to_module);
-    m_cross_module_allows[to_module].insert(from_domain);
-    return Result<void>::success();
-}
-
-Result<void> DomainManager::allow_cross_module_specific(
-    const std::string& from_domain,
-    const std::string& target_domain,
-    const std::string& target_module
-) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    // Unidirectional fine-grained grant from from_domain to target_domain in target_module
-    m_cross_module_specific_allows[from_domain][target_module].insert(target_domain);
-    return Result<void>::success();
-}
-
-Result<void> DomainManager::allow_access_to(const std::string& from_module) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    // Ingress grant: allows incoming calls from from_module
-    m_ingress_allowed_modules.insert(from_module);
-    return Result<void>::success();
-}
-
-Result<void> DomainManager::allow_access_to_specific(const std::string& from_domain, const std::string& from_module) {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    // Fine-grained ingress grant: allows incoming calls specifically from from_domain of from_module
-    m_ingress_specific_allows[from_module].insert(from_domain);
-    return Result<void>::success();
-}
-
-Result<void> DomainManager::allow_all_income() {
-    std::lock_guard<std::mutex> lock(m_mutex);
-    // Ingress wildcard: allows all incoming cross-module calls
-    m_allow_all_income = true;
-    return Result<void>::success();
-}
-
-bool DomainManager::check_execution_access(
-    const std::string& from_module,
-    const std::string& from_domain,
-    const std::string& to_module,
-    const std::string& to_domain
-) const {
-    // 0. Fail-closed on empty domain names
-    if (from_domain.empty() || to_domain.empty()) return false;
-
-    // 1. System administrative authority is always granted
-    if (from_domain == "system") return true;
-
-    // 2. Wildcards are open: "Wildcard are open. No allow needed no matter what kind."
-    if (to_domain == "*" || (to_domain.size() >= 2 && to_domain.substr(to_domain.size() - 2) == ".*")) {
-        return true;
-    }
-
-    // 3. Blacklist strictly takes precedence over all allow rules
-    if (is_cross_domain_blacklisted(from_domain, to_domain)) {
-        return false;
-    }
-
-    std::lock_guard<std::mutex> lock(m_mutex);
-
-    // 4. Intra-Module evaluation (from_module == to_module or caller module not specified)
-    if (from_module == to_module || from_module.empty()) {
-        // Same domain within module is always permitted
-        if (from_domain == to_domain) return true;
-
-        // Check unidirectional intra-module rules: allow_cross_domain(from_domain, to_domain)
-        auto intra_it = m_intra_domain_allows.find(from_domain);
-        if (intra_it != m_intra_domain_allows.end() && intra_it->second.count(to_domain) > 0) {
-            return true;
-        }
-
-        // Check domain object fallback for backward compatibility
-        auto dom_it = m_domains.find(from_domain);
-        if (dom_it != m_domains.end() && dom_it->second->can_access_domain(to_domain)) {
-            return true;
-        }
-
-        // No intra-module grant found -> Denied
-        return false;
-    }
-
-    // 5. Inter-Module evaluation (from_module != to_module)
-    // A. Check if all incoming calls are permitted
-    if (m_allow_all_income) return true;
-
-    // B. Check if bidirectional allow_cross_module was granted
-    auto cm_it = m_cross_module_allows.find(from_domain);
-    if (cm_it != m_cross_module_allows.end() && cm_it->second.count(to_module) > 0) {
-        return true;
-    }
-    auto cm_rev = m_cross_module_allows.find(from_module);
-    if (cm_rev != m_cross_module_allows.end() && cm_rev->second.count(to_domain) > 0) {
-        return true;
-    }
-
-    // C. Check fine-grained specific grant: allow_cross_module_specific(from_domain, to_domain, to_module)
-    auto spec_it = m_cross_module_specific_allows.find(from_domain);
-    if (spec_it != m_cross_module_specific_allows.end()) {
-        auto mod_spec = spec_it->second.find(to_module);
-        if (mod_spec != spec_it->second.end() && mod_spec->second.count(to_domain) > 0) {
-            return true;
-        }
-    }
-
-    // D. Check ingress grants on target module
-    if (m_ingress_allowed_modules.count(from_module) > 0) {
-        return true;
-    }
-    auto ing_spec = m_ingress_specific_allows.find(from_module);
-    if (ing_spec != m_ingress_specific_allows.end() && ing_spec->second.count(from_domain) > 0) {
-        return true;
-    }
-
-    // E. Backward compatibility fallback: check if global cross-domain grant exists
-    auto dom_it = m_domains.find(from_domain);
-    if (dom_it != m_domains.end() && dom_it->second->can_access_domain(to_domain)) {
-        return true;
-    }
-
-    return false;
-}
-
 bool DomainManager::check_cross_domain_access(const std::string& from_domain, const std::string& to_domain) const {
-    return check_execution_access("", from_domain, "", to_domain);
+    if (from_domain.empty() || to_domain.empty()) return false;
+    if (from_domain == "system") return true;
+    if (from_domain == to_domain) return true;
+    if (to_domain == "*" || (to_domain.size() >= 2 && to_domain.substr(to_domain.size() - 2) == ".*")) return true;
+    if (is_cross_domain_blacklisted(from_domain, to_domain)) return false;
+
+    std::lock_guard<std::mutex> lock(m_mutex);
+    auto it = m_domains.find(from_domain);
+    if (it == m_domains.end()) {
+        return false;
+    }
+    return it->second->can_access_domain(to_domain);
 }
 
 Result<void> DomainManager::blacklist_domain(const std::string& from_domain, const std::string& to_domain) {

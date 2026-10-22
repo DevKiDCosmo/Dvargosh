@@ -95,6 +95,12 @@ public:
     /** @brief Returns the container's registered name. */
     const std::string& name() const noexcept { return m_config.container_name; }
 
+    /** @brief Returns whether hardware PROT_NONE guard pages are enabled. */
+    bool is_guard_pages_enabled() const noexcept { return m_config.use_guard_pages; }
+
+    /** @brief Returns configuration parameters of the container. */
+    const SecuredMemoryConfig& config() const noexcept { return m_config; }
+
     /** @brief Returns the base pointer of the usable memory region. */
     void* raw_base() noexcept { return m_usable_memory; }
     const void* raw_base() const noexcept { return m_usable_memory; }

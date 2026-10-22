@@ -102,14 +102,6 @@ std::string invokeothers() {
 
 extern void* just_true();
 DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") {
-    // 1. Anti-Hijacking verification:
-    // Attempting to retrieve a foreign module's context returns nullptr due to ExecutionContext authentication
-    auto* foreign_ctx = Runtime::get_context("logger");
-    if (foreign_ctx) {
-        std::cerr << "[SECURITY WARNING] Foreign context hijack succeeded unexpectedly!\n";
-    }
-
-    // 2. Resolve authentic ModuleContext for this module using zero-parameter get_context()
     auto* ctx = Runtime::get_context();
     if (!ctx) return Result<Value>::failure(StatusCode(23), "Error: No active module context");
     

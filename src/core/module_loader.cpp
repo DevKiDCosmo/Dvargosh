@@ -49,100 +49,6 @@ static size_t read_module_def_quota_bytes(const std::string& mod_name, const std
     return 0;
 }
 
-static bool parse_module_manifest_def(
-    const std::string& def_path,
-    std::string& out_name,
-    std::string& out_version,
-    std::string& out_abi,
-    std::string& out_domain
-) {
-    std::ifstream f(def_path);
-    if (!f.is_open()) return false;
-    std::string line;
-    bool in_module = false;
-    while (std::getline(f, line)) {
-        size_t first = line.find_first_not_of(" \t\r\n");
-        if (first == std::string::npos) continue;
-        if (line[first] == '#' || line[first] == ';') continue;
-        if (line[first] == '[') {
-            in_module = (line.find("[module]") != std::string::npos);
-            continue;
-        }
-        if (!in_module) continue;
-        auto eq = line.find('=');
-        if (eq == std::string::npos) continue;
-        std::string key = line.substr(first, eq - first);
-        std::string val = line.substr(eq + 1);
-
-        size_t k_end = key.find_last_not_of(" \t\r\n");
-        if (k_end != std::string::npos) key = key.substr(0, k_end + 1);
-
-        size_t v_start = val.find_first_not_of(" \t\r\n");
-        size_t v_end = val.find_last_not_of(" \t\r\n");
-        if (v_start != std::string::npos && v_end != std::string::npos) {
-            val = val.substr(v_start, v_end - v_start + 1);
-        } else {
-            val = "";
-        }
-
-        if (key == "name") out_name = val;
-        else if (key == "version") out_version = val;
-        else if (key == "abi_version") out_abi = val;
-        else if (key == "domains" || key == "domain") out_domain = val;
-    }
-    return !out_name.empty();
-}
-
-static bool parse_module_meta_json(
-    const std::string& json_path,
-    std::string& out_name,
-    std::string& out_version,
-    std::string& out_abi,
-    std::string& out_domain,
-    std::string& out_build_id,
-    size_t& out_secured_mem_bytes
-) {
-    std::ifstream f(json_path);
-    if (!f.is_open()) return false;
-    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-
-    auto extract_str = [&](const std::string& key) -> std::string {
-        std::string pattern = "\"" + key + "\":";
-        size_t pos = content.find(pattern);
-        if (pos == std::string::npos) return "";
-        size_t q1 = content.find('\"', pos + pattern.size());
-        if (q1 == std::string::npos) return "";
-        size_t q2 = content.find('\"', q1 + 1);
-        if (q2 == std::string::npos) return "";
-        return content.substr(q1 + 1, q2 - q1 - 1);
-    };
-
-    auto extract_uint = [&](const std::string& key) -> uint64_t {
-        std::string pattern = "\"" + key + "\":";
-        size_t pos = content.find(pattern);
-        if (pos == std::string::npos) return 0;
-        size_t start = content.find_first_of("0123456789", pos + pattern.size());
-        if (start == std::string::npos) return 0;
-        size_t end = content.find_first_not_of("0123456789", start);
-        if (end == std::string::npos) end = content.size();
-        try {
-            return std::stoull(content.substr(start, end - start));
-        } catch (...) {
-            return 0;
-        }
-    };
-
-    out_name = extract_str("name");
-    out_version = extract_str("version");
-    out_abi = extract_str("abi_version");
-    out_domain = extract_str("domain");
-    out_build_id = extract_str("build_id");
-    uint64_t kb = extract_uint("secured_memory_kb");
-    out_secured_mem_bytes = static_cast<size_t>(kb) * 1024;
-
-    return !out_name.empty();
-}
-
 static void load_signatures_from_file(const std::string& path, std::unordered_map<std::string, std::string>& sigs) {
     std::ifstream f(path);
     if (!f.is_open()) return;
@@ -226,116 +132,50 @@ std::vector<DiscoveredModuleInfo> ModuleLoader::discover_all_modules() {
 
             std::string full_path = dir_path + "/" + filename;
 
-            // Extract candidate stem name (e.g. libmod_math.dylib -> math, libmath.dylib -> math)
-            std::string stem = filename.substr(0, filename.size() - ext.size());
-            if (stem.rfind("libmod_", 0) == 0) {
-                stem = stem.substr(7);
-            } else if (stem.rfind("lib", 0) == 0) {
-                stem = stem.substr(3);
-            }
-
-            // 1. Companion .meta.json Manifest-First Discovery (Static inspection without dlopen or code execution)
-            std::vector<std::string> candidate_jsons = {
-                dir_path + "/" + stem + ".meta.json",
-                dir_path + "/" + filename + ".meta.json",
-                "build/modules/" + stem + ".meta.json",
-                "modules/" + stem + "/" + stem + ".meta.json",
-                "development_modules/" + stem + "/" + stem + ".meta.json"
-            };
-
-            std::string meta_name, meta_version, meta_abi, meta_domain, meta_build_id;
-            size_t meta_quota = 0;
-            bool found_meta = false;
-            for (const auto& jpath : candidate_jsons) {
-                if (parse_module_meta_json(jpath, meta_name, meta_version, meta_abi, meta_domain, meta_build_id, meta_quota)) {
-                    found_meta = true;
-                    break;
+            // Enforce cryptographic signature if configured
+            if (m_config.enforce_signatures) {
+                if (m_config.secret_signing_key.empty()) {
+                    continue; // No signing key configured; untrusted binary rejected
+                }
+                auto it_sig = m_known_signatures.find(filename);
+                if (it_sig == m_known_signatures.end()) {
+                    continue; // Unsigned binary rejected without inspection
+                }
+                if (!Crypto::verify_file_signature(m_config.secret_signing_key, full_path, it_sig->second)) {
+                    continue; // Invalid signature; reject without inspection
                 }
             }
 
-            // 2. Manifest .def Discovery
-            std::vector<std::string> candidate_defs = {
-                dir_path + "/" + filename + ".def",
-                dir_path + "/" + stem + ".def",
-                dir_path + "/module.def",
-                dir_path + "/" + stem + "/module.def",
-                "build/modules/" + stem + ".def",
-                "modules/" + stem + "/module.def",
-                "development_modules/" + stem + "/module.def",
-                "build/development_modules/" + stem + "/module.def"
-            };
-
-            std::string def_name, def_version, def_abi, def_domain;
-            bool found_def = false;
-            if (!found_meta) {
-                for (const auto& dpath : candidate_defs) {
-                    if (parse_module_manifest_def(dpath, def_name, def_version, def_abi, def_domain)) {
-                        found_def = true;
-                        break;
-                    }
+            // Direct Header & Read-Only Data (rd) Inspection from the Library
+            auto hdr_res = ModuleHeader::read_from_file(full_path);
+            if (!hdr_res.is_ok()) {
+                // If direct raw-file inspection failed, fall back to handle-based symbol lookup
+                void* handle = dlopen(full_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
+                if (handle) {
+                    hdr_res = ModuleHeader::read_from_handle(handle);
+                    dlclose(handle);
                 }
+            }
+
+            if (!hdr_res.is_ok()) {
+                continue; // Not a Dvargosh module library; skip
+            }
+
+            const auto& hdr = hdr_res.value();
+            auto val_res = hdr.validate();
+            if (!val_res.is_ok()) {
+                continue; // Header validation failed; skip
             }
 
             DiscoveredModuleInfo info;
+            info.name = hdr.name;
             info.filename = filename;
             info.full_path = full_path;
-
-            if (found_meta) {
-                info.name = meta_name;
-                info.build_id = meta_build_id.empty() ? ("meta:" + meta_version) : meta_build_id;
-                info.abi_version = meta_abi.empty() ? DVARGOSH_ABI_VERSION_STR : meta_abi;
-                info.is_valid = true;
-            } else if (found_def) {
-                info.name = def_name;
-                info.build_id = "manifest:" + (def_version.empty() ? "1.0.0" : def_version);
-                info.abi_version = def_abi.empty() ? DVARGOSH_ABI_VERSION_STR : def_abi;
-                info.is_valid = true;
-            } else {
-                // No manifest found: shared object is untrusted unless signature verified
-                if (m_config.enforce_signatures) {
-                    if (m_config.secret_signing_key.empty()) {
-                        continue; // No signing key configured; untrusted binary rejected
-                    }
-                    auto it_sig = m_known_signatures.find(filename);
-                    if (it_sig == m_known_signatures.end()) {
-                        continue; // Unsigned binary rejected without dlopen
-                    }
-                    if (!Crypto::verify_file_signature(m_config.secret_signing_key, full_path, it_sig->second)) {
-                        continue; // Invalid signature; reject without dlopen
-                    }
-                }
-
-                // If signatures are not enforced or binary has verified cryptographic signature, inspect symbols
-                void* handle = dlopen(full_path.c_str(), RTLD_LAZY | RTLD_LOCAL | RTLD_NODELETE);
-                if (!handle) continue;
-
-                // Inspect static embedded header first (zero class instantiation, zero code execution)
-                auto hdr_res = ModuleHeader::read_from_handle(handle);
-                if (hdr_res.is_ok()) {
-                    const auto& hdr = hdr_res.value();
-                    info.name = hdr.name;
-                    info.build_id = hdr.build_id.empty() ? ("v" + hdr.version_str) : hdr.build_id;
-                    info.abi_version = hdr.abi_version;
-                    info.is_valid = hdr.validate().is_ok();
-                } else {
-                    auto magic_fn = reinterpret_cast<ModuleMagicFn>(dlsym(handle, "dvargosh_module_magic"));
-                    if (!magic_fn || std::string(magic_fn()) != DVARGOSH_MODULE_MAGIC) {
-                        dlclose(handle);
-                        continue;
-                    }
-
-                    auto name_fn = reinterpret_cast<ModuleNameFn>(dlsym(handle, "dvargosh_module_name"));
-                    auto build_fn = reinterpret_cast<ModuleBuildIdFn>(dlsym(handle, "dvargosh_build_id"));
-                    auto abi_fn = reinterpret_cast<ModuleAbiFn>(dlsym(handle, "dvargosh_abi_version"));
-
-                    info.name = name_fn ? name_fn() : filename;
-                    info.build_id = build_fn ? build_fn() : "unknown";
-                    info.abi_version = abi_fn ? abi_fn() : "unknown";
-                    info.is_valid = true;
-                }
-
-                dlclose(handle);
-            }
+            info.build_id = hdr.build_id.empty() ? ("v" + hdr.version_str) : hdr.build_id;
+            info.abi_version = hdr.abi_version;
+            info.domain = hdr.domain;
+            info.supported_domains = hdr.supported_domains;
+            info.is_valid = true;
 
             m_discovered_by_name[info.name] = info;
             m_discovered_by_filename[info.filename] = info;
@@ -844,7 +684,20 @@ Result<void> ModuleLoader::auto_load_domain(const std::string& domain_name, cons
     }
 
     for (const auto& info : discovered) {
-        if (info.name == candidate_mod || info.name.find(candidate_mod) != std::string::npos) {
+        bool matches = (info.domain == domain_name || info.domain == "*");
+        if (!matches) {
+            for (const auto& dom : info.supported_domains) {
+                if (dom == domain_name || dom == "*") {
+                    matches = true;
+                    break;
+                }
+            }
+        }
+        if (!matches) {
+            matches = (info.name == candidate_mod || info.name.find(candidate_mod) != std::string::npos);
+        }
+
+        if (matches) {
             if (is_loaded(info.name)) return Result<void>::success();
 
             std::string sig;

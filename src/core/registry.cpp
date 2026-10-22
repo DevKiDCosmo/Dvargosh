@@ -253,14 +253,14 @@ Result<Value> Registry::invoke(
         return Result<Value>::failure(StatusCode::SymbolNotFound, err);
     }
 
-    // Check Cross-Domain / Cross-Module Access Permission
+    // Check Cross-Domain Access Permission
     if (m_domain_mgr && effective_caller_domain != "system") {
-        if (!m_domain_mgr->check_execution_access(effective_caller_module, effective_caller_domain, target_module, target_domain)) {
+        if (!m_domain_mgr->check_cross_domain_access(effective_caller_domain, target_domain)) {
             return Result<Value>::failure(
                 StatusCode::PermissionDenied,
-                "Cross-Domain Violation: Caller '" + effective_caller_module + ":" + effective_caller_domain +
+                "Cross-Domain Violation: Domain '" + effective_caller_domain +
                 "' is not permitted to invoke method '" + method_name +
-                "' in Domain '" + target_domain + "' (module '" + target_module + "')"
+                "' in Domain '" + target_domain + "'"
             );
         }
     }

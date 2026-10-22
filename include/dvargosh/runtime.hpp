@@ -8,7 +8,6 @@
 namespace dvargosh {
 
 class ModuleContext;
-class SubContext;
 class Registry;
 class DIContainer;
 
@@ -44,26 +43,6 @@ public:
      */
     static ModuleContext* current_context();
 
-    /**
-     * @brief Automatically resolves the active SubContext of the calling module and domain
-     * from the thread-local ExecutionContext. Zero-parameter, anti-tamper protected.
-     */
-    static SubContext* current_subcontext();
-
-    /**
-     * @brief Retrieves a SubContext by module name and domain name, enforcing caller checks.
-     */
-    static SubContext* get_subcontext(const std::string& module_name, const std::string& domain_name);
-
-    /** @brief Registers a SubContext in the global tracking registry by its HMAC-SHA256 hash. */
-    static void register_subcontext(const std::string& hash, SubContext* ctx);
-
-    /** @brief Unregisters a SubContext from the global tracking registry by its hash. */
-    static void unregister_subcontext(const std::string& hash);
-
-    /** @brief Retrieves a SubContext directly by its HMAC-SHA256 tracking hash. */
-    static SubContext* get_subcontext_by_hash(const std::string& hash);
-
     static void set_active_registry(Registry* reg);
     static Registry* active_registry();
 
@@ -73,7 +52,6 @@ public:
 private:
     static std::mutex& mutex();
     static std::unordered_map<std::string, ModuleContext*>& contexts();
-    static std::unordered_map<std::string, SubContext*>& subcontexts_by_hash();
     static Registry*& registry_instance();
     static DIContainer*& container_instance();
 };

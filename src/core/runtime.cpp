@@ -1,6 +1,5 @@
 #include "dvargosh/runtime.hpp"
 #include "dvargosh/di_container.hpp"
-#include "dvargosh/subcontext.hpp"
 #include "dvargosh/registry.hpp"
 #include "dvargosh/execution_context.hpp"
 #include "dvargosh/logger.hpp"
@@ -17,11 +16,6 @@ std::mutex& Runtime::mutex() {
 std::unordered_map<std::string, ModuleContext*>& Runtime::contexts() {
     static std::unordered_map<std::string, ModuleContext*> s_contexts;
     return s_contexts;
-}
-
-std::unordered_map<std::string, SubContext*>& Runtime::subcontexts_by_hash() {
-    static std::unordered_map<std::string, SubContext*> s_subcontexts;
-    return s_subcontexts;
 }
 
 Registry*& Runtime::registry_instance() {
@@ -118,47 +112,6 @@ ModuleContext* Runtime::current_context() {
     std::string mod = ExecutionContext::current_module();
     if (mod.empty() || mod == "untrusted") return nullptr;
     return get_context(mod);
-}
-
-SubContext* Runtime::current_subcontext() {
-    if (ExecutionContext::frame_depth() == 0) {
-        return nullptr;
-    }
-    auto val = ExecutionContext::validate_stack_integrity();
-    if (!val.is_ok()) {
-        log_error("Runtime::current_subcontext: Stack tampering detected!");
-        return nullptr;
-    }
-    std::string mod = ExecutionContext::current_module();
-    std::string dom = ExecutionContext::current_domain();
-    if (mod.empty() || mod == "untrusted") return nullptr;
-
-    ModuleContext* mctx = get_context(mod);
-    if (!mctx) return nullptr;
-
-    return mctx->get_subcontext_for_domain(dom);
-}
-
-SubContext* Runtime::get_subcontext(const std::string& module_name, const std::string& domain_name) {
-    ModuleContext* mctx = get_context(module_name);
-    if (!mctx) return nullptr;
-    return mctx->get_subcontext_for_domain(domain_name);
-}
-
-void Runtime::register_subcontext(const std::string& hash, SubContext* ctx) {
-    std::lock_guard<std::mutex> lock(mutex());
-    subcontexts_by_hash()[hash] = ctx;
-}
-
-void Runtime::unregister_subcontext(const std::string& hash) {
-    std::lock_guard<std::mutex> lock(mutex());
-    subcontexts_by_hash().erase(hash);
-}
-
-SubContext* Runtime::get_subcontext_by_hash(const std::string& hash) {
-    std::lock_guard<std::mutex> lock(mutex());
-    auto it = subcontexts_by_hash().find(hash);
-    return (it != subcontexts_by_hash().end()) ? it->second : nullptr;
 }
 
 void Runtime::set_active_registry(Registry* reg) {
