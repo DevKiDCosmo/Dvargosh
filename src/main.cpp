@@ -228,7 +228,7 @@ int main(int argc, char** argv) {
         std::string cmd;
         iss >> cmd;
 
-        if (cmd == "quit" || cmd == "exit") {
+        if (cmd == "quit" || cmd == "q" || cmd == "exit") {
             break;
         } else if (cmd == "help") {
             std::cout << "Commands:\n"

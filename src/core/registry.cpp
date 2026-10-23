@@ -147,6 +147,17 @@ bool Registry::has_method(const std::string& method_name) const {
     return (it != m_aliases.end() && m_methods.find(it->second) != m_methods.end());
 }
 
+bool Registry::has_provider(const std::string& provider_module) const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    for (const auto& [_, desc] : m_services) {
+        if (desc.provider_module == provider_module) return true;
+    }
+    for (const auto& [_, desc] : m_methods) {
+        if (desc.provider_module == provider_module) return true;
+    }
+    return false;
+}
+
 std::string Registry::get_method_domain(const std::string& method_name) const {
     std::lock_guard<std::mutex> lock(m_mutex);
     std::string canonical = method_name;
@@ -188,6 +199,10 @@ Result<Value> Registry::invoke(
     const std::string& caller_domain,
     const SecurityPolicy* caller_policy
 ) {
+
+    // TODO: SYSTEM DOMAINS HAVE TO BE RESOLVE
+
+
     // 1. Resolve alias override to canonical method name
     std::string canonical_method = resolve_method_name(method_name);
 

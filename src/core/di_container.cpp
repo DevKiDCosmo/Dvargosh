@@ -15,17 +15,23 @@ ModuleContext::ModuleContext(
     std::shared_ptr<DomainManager> domain_mgr,
     std::unique_ptr<SecuredMemorySpace> secured_memory,
     std::unique_ptr<TrackedAllocator> tracked_allocator,
-    std::unique_ptr<ArenaAllocator> arena
+    std::unique_ptr<ArenaAllocator> arena,
+    std::shared_ptr<ModuleCatalog> modules
 ) : m_module_name(std::move(module_name)),
     m_domain_name(std::move(domain_name)),
     m_policy(std::move(policy)),
     m_registry(std::move(registry)),
+    m_modules(std::move(modules)),
     m_resource_mgr(std::move(resource_mgr)),
     m_event_bus(std::move(event_bus)),
     m_domain_mgr(std::move(domain_mgr)),
     m_secured_memory(std::move(secured_memory)),
     m_tracked_allocator(std::move(tracked_allocator)),
     m_arena(std::move(arena)) {
+    if (!m_modules) {
+        m_modules = std::make_shared<ModuleCatalog>();
+        register_standard_modules(*m_modules);
+    }
     if (m_domain_mgr && !m_domain_name.empty()) {
         auto domain = m_domain_mgr->get_domain(m_domain_name);
         if (domain) {
@@ -83,13 +89,45 @@ CommandMemory* ModuleContext::command_memory() noexcept {
     return ExecutionContext::current_command_memory();
 }
 
+Result<Value> ModuleContext::requireModule(const std::string& module_name) {
+    if (module_name.empty()) {
+        if (m_registry) {
+            m_registry->invoke("logger.error", {Value("No Module identification is given.")}, "system", "system", &m_policy); // TODO: System vulnarbilities if impersonating system is that easy. Needs more verification so that system can access all.
+            auto di = std::make_shared<DIContainer>();
+            di->registry()->invoke("logger.error", {Value("No Module identification is given.")});
+        }
+        return Result<Value>::failure(StatusCode::InvalidArg, "No Module identification is given.");
+    }
+
+    if (m_modules && m_modules->exist_domain(module_name)) {
+        return Result<Value>::success(Value(true));
+    }
+
+    if (Runtime::has_module(module_name)) {
+        return Result<Value>::success(Value(true));
+    }
+
+    if (m_domain_mgr && m_domain_mgr->has_domain(module_name)) {
+        return Result<Value>::success(Value(true));
+    }
+
+    if (m_registry && m_registry->has_provider(module_name)) {
+        return Result<Value>::success(Value(true));
+    }
+
+    return Result<Value>::failure(StatusCode::NotFound, "Module is not installed or registered.");
+}
+
 DIContainer::DIContainer()
     : m_registry(std::make_shared<Registry>()),
+      m_modules(std::make_shared<ModuleCatalog>()),
       m_resource_mgr(std::make_shared<ResourceManager>()),
       m_event_bus(std::make_shared<EventBus>()),
       m_domain_mgr(std::make_shared<DomainManager>()) {
+    register_standard_modules(*m_modules);
     m_registry->set_domain_manager(m_domain_mgr.get());
     register_instance<Registry>(m_registry);
+    register_instance<ModuleCatalog>(m_modules);
     register_instance<ResourceManager>(m_resource_mgr);
     register_instance<EventBus>(m_event_bus);
     register_instance<DomainManager>(m_domain_mgr);
@@ -144,7 +182,8 @@ Result<std::unique_ptr<ModuleContext>> DIContainer::create_module_context(
         m_domain_mgr,
         std::move(secured_mem),
         std::move(tracked_alloc),
-        std::move(arena)
+        std::move(arena),
+        m_modules
     );
 
     return Result<std::unique_ptr<ModuleContext>>::success(std::move(ctx));

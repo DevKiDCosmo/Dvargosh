@@ -22,6 +22,7 @@ class Runtime {
 public:
     static void register_module_context(const std::string& module_name, ModuleContext* ctx);
     static void unregister_module_context(const std::string& module_name);
+    static bool has_module(const std::string& module_name);
 
     /**
      * @brief Retrieves the active injected ModuleContext pointer for the calling module.

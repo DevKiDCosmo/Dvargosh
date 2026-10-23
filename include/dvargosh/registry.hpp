@@ -193,6 +193,7 @@ public:
 
     std::vector<std::string> list_methods() const;
     std::vector<std::string> list_services() const;
+    bool has_provider(const std::string& provider_module) const;
     size_t service_count() const;
     size_t method_count() const;
     void dump_report() const;

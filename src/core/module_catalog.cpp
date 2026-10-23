@@ -35,7 +35,7 @@ std::vector<ModuleDescriptor> ModuleCatalog::list_by_domain(const std::string& d
 
 bool ModuleCatalog::exist_domain(const std::string_view& module) const {
     for (const auto& [_, desc] : m_descriptors) {
-        if (desc.name == module) {
+        if (desc.name == module || desc.domain == module) {
             return true;
         }
     }

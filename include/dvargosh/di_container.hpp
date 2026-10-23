@@ -33,7 +33,8 @@ public:
         std::shared_ptr<DomainManager> domain_mgr,
         std::unique_ptr<SecuredMemorySpace> secured_memory,
         std::unique_ptr<TrackedAllocator> tracked_allocator,
-        std::unique_ptr<ArenaAllocator> arena
+        std::unique_ptr<ArenaAllocator> arena,
+        std::shared_ptr<ModuleCatalog> modules = nullptr
     );
 
     ~ModuleContext();
@@ -82,12 +83,7 @@ public:
         return m_registry->invoke(method_name, args, m_module_name, m_domain_name, &m_policy);
     }
 
-    Result<Value> requireModule(const std::string& module_name) {
-        if (module_name == "") return m_registry->invoke("logger.error", {Value("No Module indetification is given.")}, "logger", "system", &m_policy); // TODO: FIX NEEDED
-
-        if (m_modules->exist_domain(module_name)) return Result<Value>::success(Value(true));
-        return Result<Value>::failure(StatusCode::InternalError, "Module is not installed or registered.");
-    }
+    Result<Value> requireModule(const std::string& module_name);
 
     // Service Registration
     template<typename Interface>
@@ -171,6 +167,7 @@ public:
     );
 
     std::shared_ptr<Registry> registry() const { return m_registry; }
+    std::shared_ptr<ModuleCatalog> catalog() const { return m_modules; }
     std::shared_ptr<ResourceManager> resource_manager() const { return m_resource_mgr; }
     std::shared_ptr<EventBus> event_bus() const { return m_event_bus; }
     std::shared_ptr<DomainManager> domain_manager() const { return m_domain_mgr; }
@@ -178,6 +175,7 @@ public:
 private:
     mutable std::mutex m_mutex;
     std::shared_ptr<Registry> m_registry;
+    std::shared_ptr<ModuleCatalog> m_modules;
     std::shared_ptr<ResourceManager> m_resource_mgr;
     std::shared_ptr<EventBus> m_event_bus;
     std::shared_ptr<DomainManager> m_domain_mgr;

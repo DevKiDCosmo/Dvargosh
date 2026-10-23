@@ -122,4 +122,6 @@ DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") {
     return Result<Value>::success(Value(true));
 }
 
+DVARGOSH_EXPORT_ALIAS_OVERRIDE(just_true, "k");
+
 } // namespace dvargosh

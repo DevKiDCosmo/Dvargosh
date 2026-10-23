@@ -38,6 +38,11 @@ void Runtime::unregister_module_context(const std::string& module_name) {
     contexts().erase(module_name);
 }
 
+bool Runtime::has_module(const std::string& module_name) {
+    std::lock_guard<std::mutex> lock(mutex());
+    return contexts().find(module_name) != contexts().end();
+}
+
 ModuleContext* Runtime::get_context() {
     // 1. Resolve from active execution frame if available
     if (ExecutionContext::frame_depth() > 0) {
