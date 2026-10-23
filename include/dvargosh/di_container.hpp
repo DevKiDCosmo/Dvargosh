@@ -8,6 +8,7 @@
 #include "event_bus.hpp"
 #include "registry.hpp"
 #include "domain.hpp"
+#include "module_catalog.hpp"
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -81,6 +82,13 @@ public:
         return m_registry->invoke(method_name, args, m_module_name, m_domain_name, &m_policy);
     }
 
+    Result<Value> requireModule(const std::string& module_name) {
+        if (module_name == "") return m_registry->invoke("logger.error", {Value("No Module indetification is given.")}, "logger", "system", &m_policy); // TODO: FIX NEEDED
+
+        if (m_modules->exist_domain(module_name)) return Result<Value>::success(Value(true));
+        return Result<Value>::failure(StatusCode::InternalError, "Module is not installed or registered.");
+    }
+
     // Service Registration
     template<typename Interface>
     Result<void> register_service(
@@ -121,6 +129,7 @@ private:
     std::string m_domain_name;
     SecurityPolicy m_policy;
     std::shared_ptr<Registry> m_registry;
+    std::shared_ptr<ModuleCatalog> m_modules;
     std::shared_ptr<ResourceManager> m_resource_mgr;
     std::shared_ptr<EventBus> m_event_bus;
     std::shared_ptr<DomainManager> m_domain_mgr;

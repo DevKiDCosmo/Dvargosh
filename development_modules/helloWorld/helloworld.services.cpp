@@ -113,6 +113,8 @@ DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") {
     
     // Invoke logger.debug using authentic local context (logger.* is an open wildcard)
     if (ctx) {
+        ctx->requireModule("logger");
+        ctx->requireModule("apsodkapsokdpaoskdpaoskd");
         ctx->call("logger.debug", {Value("just_true called via authentic ModuleContext")});
     }
 

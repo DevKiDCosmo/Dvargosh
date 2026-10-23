@@ -40,10 +40,13 @@ python3 "${ROOT_DIR}/tools/dvargosh_tool.py" sign "${ROOT_DIR}/build" "${SECRET_
 echo "[6/7] Running CTest & Verification Harness..."
 ctest --test-dir "${ROOT_DIR}/build" --output-on-failure
 
-echo "[7/7] Running Standalone App Loader Test & Generated Pipeline App..."
+echo "[7/7] Running Standalone App Loader Test, Generated Pipeline App, & Telecom Test..."
 "${ROOT_DIR}/build/bin/dvargosh_app_loader_test"
 if [ -f "${ROOT_DIR}/build/bin/dvargosh_pipeline_app" ]; then
     "${ROOT_DIR}/build/bin/dvargosh_pipeline_app"
+fi
+if [ -f "${ROOT_DIR}/build/bin/dvargosh_telecom_test" ]; then
+    "${ROOT_DIR}/build/bin/dvargosh_telecom_test"
 fi
 
 echo "[dvargosh] Pipeline verification complete: All tests passed."

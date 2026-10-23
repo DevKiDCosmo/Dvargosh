@@ -13,4 +13,17 @@ std::string telecom_echo(const std::string& input) {
     return "[telecom] " + input;
 }
 
+/**
+ * @brief Packet routing service method for 'telecom'.
+ * Routes packets through simulated telecom routing domain.
+ */
+DVARGOSH_SERVICE(telecom:packet)
+std::string telecom_route_packet(const std::string& packet) {
+    if (packet.empty()) {
+        return "ERR_EMPTY_PACKET";
+    }
+    return "[ROUTED:telecom:packet] " + packet;
+}
+
 } // namespace dvargosh
+

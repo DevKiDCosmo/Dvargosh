@@ -33,7 +33,8 @@ public:
     const ModuleDescriptor* find(const std::string& name) const;
     std::vector<ModuleDescriptor> list_all() const;
     std::vector<ModuleDescriptor> list_by_domain(const std::string& domain) const;
-
+    bool exist_domain(const std::string_view& module) const;
+    
     // Batch operations - plug and play easily
     Result<size_t> load_all(
         ModuleLoader& loader,

@@ -37,5 +37,3 @@ ENV/
 .clangd/
 docs/dvargosh_lint.md
 docs/dvargosh_schema.json
-docs/dvargosh_schema.json
-docs/dvargosh_lint.md

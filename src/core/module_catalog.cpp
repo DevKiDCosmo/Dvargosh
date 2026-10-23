@@ -33,6 +33,15 @@ std::vector<ModuleDescriptor> ModuleCatalog::list_by_domain(const std::string& d
     return res;
 }
 
+bool ModuleCatalog::exist_domain(const std::string_view& module) const {
+    for (const auto& [_, desc] : m_descriptors) {
+        if (desc.name == module) {
+            return true;
+        }
+    }
+    return false;
+}
+
 Result<size_t> ModuleCatalog::load_all(
     ModuleLoader& loader,
     const std::string& modules_dir,

@@ -100,7 +100,8 @@ public:
                 }
                 std::string msg = args[0].to_string();
                 m_logger->error("[RPC] " + msg);
-                return Result<Value>::success(Value(true));
+                // return Result<Value>::success(Value(true));
+                return Result<Value>::failure(StatusCode::InternalError, msg); // temp
             }
         );
         if (!meth_res_error.is_ok()) return meth_res_error;
