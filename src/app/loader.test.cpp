@@ -1,15 +1,65 @@
 #include "dvargosh/dvargosh.hpp"
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <cassert>
+#include <random>
+#include <sstream>
 
 using namespace dvargosh;
+
+// The loader test exercises the sign/verify machinery, not the secrecy of any
+// particular key: an ephemeral random key keeps ctest hermetic. DVARGOSH_SIGNING_KEY
+// overrides it when a deterministic key is wanted across processes.
+static std::string resolve_test_signing_key() {
+    if (const char* env = std::getenv("DVARGOSH_SIGNING_KEY")) {
+        if (env[0] != '\0') return std::string(env);
+    }
+    std::random_device rd;
+    std::ostringstream ss;
+    ss << std::hex;
+    for (int i = 0; i < 8; ++i) ss << rd();
+    return ss.str();
+}
+
+// Provision signatures.json for the discovery gate: with signature enforcement on,
+// discover_all_modules() rejects unsigned binaries, so the test signs every module
+// binary it can see in its search paths with its own ephemeral key.
+static void provision_test_signatures(const ModuleLoader& loader, const std::string& key) {
+    for (const auto& dir : loader.search_paths()) {
+        std::error_code ec;
+        if (!std::filesystem::is_directory(dir, ec)) continue;
+
+        std::ostringstream json;
+        json << "{";
+        bool first = true;
+        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+            const auto& p = entry.path();
+            std::string ext = p.extension().string();
+            if (ext != ".dylib" && ext != ".so") continue;
+            auto sig = Crypto::sign_file(key, p.string());
+            if (!sig.is_ok()) continue;
+            if (!first) json << ",";
+            json << "\"" << p.filename().string() << "\": {\"hmac_sha256\": \"" << sig.value() << "\"}";
+            first = false;
+        }
+        json << "}";
+
+        const auto out = std::filesystem::path(dir) / "signatures.json";
+        std::ofstream(out.string()) << json.str();
+        std::cout << "  [setup] Provisioned " << out.string() << " (" << (first ? 0 : 1) << "+ entries)\n";
+        return; // one trust anchor is enough; discovery pre-loads from all search paths
+    }
+    std::cerr << "  [setup][WARN] No writable search path for signatures.json\n";
+}
 
 int main() {
     std::cout << "[dvargosh] Standalone App Test: Loader & Auto-Registration\n";
 
     ScopedCallFrame host_frame("host_loader_test", "system");
     auto di = std::make_shared<DIContainer>();
-    const std::string secret_key = "dvargosh_master_signing_key_2026";
+    const std::string secret_key = resolve_test_signing_key();
 
     ModuleLoaderConfig cfg;
     cfg.enforce_signatures = true;
@@ -22,6 +72,11 @@ int main() {
     loader.add_search_path("./development_modules");
     loader.add_search_path("../build/modules");
     loader.add_search_path("../build/development_modules");
+
+    // 0. Provision the trust anchor for this test run: with enforcement on, discovery
+    //    rejects unsigned binaries, so sign everything in the search paths first.
+    std::cout << "[Step 0] Provisioning signatures.json with the ephemeral test key...\n";
+    provision_test_signatures(loader, secret_key);
 
     // 1. Run Universal Recognition & Auto-Discovery
     std::cout << "[Step 1] Running Auto-Discovery & Header Symbol Recognition...\n";

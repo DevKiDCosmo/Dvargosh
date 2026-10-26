@@ -10,7 +10,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Default arguments
 OUTPUT_DIR="${ROOT_DIR}/dist"
-SIGNING_KEY="dvargosh_master_signing_key_2026"
+SIGNING_KEY="${DVARGOSH_SIGNING_KEY:-}"
 SKIP_TESTS=false
 CLEAN_BUILD=false
 SELECTED_MODULES=""
@@ -24,7 +24,8 @@ Usage:
 
 Options:
   --output-dir <dir>    Target directory for packaged distribution (default: ./dist)
-  --key <key>           Master HMAC-SHA256 signing secret key (default: dvargosh_production_key_2026)
+  --key <key>           Master HMAC-SHA256 signing secret key (REQUIRED: pass --key
+                        or export DVARGOSH_SIGNING_KEY; there is deliberately no default)
   --select <modules>    Comma-separated list of modules to include
   --skip-tests          Skip CTest verification step (for fast CI/CD builds)
   --clean               Remove build/ directory before compiling
@@ -115,6 +116,11 @@ find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f \( -name "_
 
 # 5. Cryptographic Module Signing
 echo "[5/7] Cryptographically Signing All Production Modules..."
+if [ -z "${SIGNING_KEY}" ]; then
+    echo "[ERROR] No signing key available. Pass --key <key> or export DVARGOSH_SIGNING_KEY."
+    echo "        A production distribution must be signed; refusing to continue."
+    exit 1
+fi
 python3 "${ROOT_DIR}/tools/dvargosh_tool.py" sign "${ROOT_DIR}/build" "${SIGNING_KEY}"
 
 # 6. Verification Harness (Unless Skipped)

@@ -21,6 +21,58 @@ if(ENABLE_ASAN)
     endif()
 endif()
 
+# Link-Time Optimization (hardened-release preset)
+option(ENABLE_LTO "Enable Interprocedural Optimization / LTO" OFF)
+if(ENABLE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT lto_supported OUTPUT lto_msg)
+    if(lto_supported)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
+    else()
+        message(STATUS "LTO requested but not supported by toolchain: ${lto_msg}")
+    endif()
+endif()
+
+# libFuzzer Harnesses (untrusted-input parsers; see tests/fuzz/)
+# Dual-mode: full libFuzzer where the toolchain ships its runtime (Linux CI, brew llvm);
+# otherwise each harness runs standalone (ASan only) over builtin seeds — macOS Xcode
+# clang has no libclang_rt.fuzzer_osx.a, and the smoke test must still be runnable.
+option(ENABLE_FUZZING "Build fuzz harnesses (libFuzzer if available, standalone ASan driver otherwise)" OFF)
+if(ENABLE_FUZZING)
+    include(CheckCXXSourceCompiles)
+    set(CMAKE_REQUIRED_FLAGS "-fsanitize=fuzzer")
+    check_cxx_source_compiles(
+        "extern \"C\" int LLVMFuzzerTestOneInput(const unsigned char*, unsigned long){return 0;}
+         int main(){return 0;}"
+        DVARGOSH_HAS_LIBFUZZER)
+    unset(CMAKE_REQUIRED_FLAGS)
+
+    file(GLOB DVARGOSH_FUZZ_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/fuzz_*.cpp)
+    foreach(fuzz_src ${DVARGOSH_FUZZ_SOURCES})
+        get_filename_component(fuzz_name ${fuzz_src} NAME_WE)
+
+        if(DVARGOSH_HAS_LIBFUZZER)
+            add_executable(${fuzz_name} ${fuzz_src})
+            target_compile_options(${fuzz_name} PRIVATE -fsanitize=fuzzer,address -fno-omit-frame-pointer)
+            target_link_options(${fuzz_name} PRIVATE -fsanitize=fuzzer,address)
+            add_test(NAME ${fuzz_name}Smoke
+                COMMAND ${fuzz_name} -runs=200 -max_total_time=20 -rss_limit_mb=2560)
+            message(STATUS "Fuzz harness ${fuzz_name}: libFuzzer mode")
+        else()
+            add_executable(${fuzz_name}
+                ${fuzz_src}
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/fuzz/standalone_driver.cpp)
+            target_compile_options(${fuzz_name} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+            target_link_options(${fuzz_name} PRIVATE -fsanitize=address)
+            add_test(NAME ${fuzz_name}Smoke COMMAND ${fuzz_name})
+            message(STATUS "Fuzz harness ${fuzz_name}: standalone ASan driver (libFuzzer runtime not found)")
+        endif()
+
+        target_link_libraries(${fuzz_name} PRIVATE dvargosh_core)
+        target_include_directories(${fuzz_name} PRIVATE include)
+    endforeach()
+endif()
+
 # Output directories
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/modules)

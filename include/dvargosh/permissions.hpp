@@ -90,7 +90,6 @@ public:
     static SecurityPolicy strict();
     static SecurityPolicy standard();
     static SecurityPolicy permissive();
-    static SecurityPolicy elevated();
 
 private:
     PermissionSet m_permissions;

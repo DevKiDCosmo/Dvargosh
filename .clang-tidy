@@ -1,0 +1,27 @@
+# Dvargosh static analysis policy.
+# CI: PR diffs must be clean for security-relevant checks; full-tree runs are nightly.
+# Run locally: make tidy   (diff-gated)   or   clang-tidy -p build <file>
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-pro-type-static-cast-downcast,
+  misc-definitions-in-headers,
+  performance-for-range-copy,
+  performance-unnecessary-copy-initialization,
+  performance-inefficient-string-concatenation,
+  readability-inconsistent-declaration-parameter-name
+
+WarningsAsErrors: 'cert-*,clang-analyzer-security-*'
+CheckOptions:
+  - key: bugprone-easily-swappable-parameters.WarnOnlyOnEquivalent
+    value: true
+  - key: performance-unnecessary-copy-initialization.AllowedTypes
+    value: '^[A-Za-z0-9_]*(Value|Result|shared_ptr|unique_ptr)$'
+# Notes:
+# - bugprone-easily-swappable-parameters fires heavily on (double,double) math APIs;
+#   WarnOnlyOnEquivalent keeps the signal for same-type adjacent params only.
+# - WarningsAsErrors promotes security analyzers to hard failures; everything else
+#   reports as warnings until the backlog is burned down (docs/execution_plan.md WS-A).

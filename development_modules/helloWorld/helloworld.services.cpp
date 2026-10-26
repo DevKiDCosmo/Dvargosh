@@ -101,13 +101,13 @@ std::string invokeothers() {
 }
 
 extern void* just_true();
-DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") {
+DVARGOSH_EXPORT_FN(just_true, "hello_world:value", "JUST TRUE") {
     auto* ctx = Runtime::get_context();
     if (!ctx) return Result<Value>::failure(StatusCode(23), "Error: No active module context");
-    
+
     std::string caller = ExecutionContext::current_domain();
     DomainManager* dm = ctx ? ctx->domain_manager() : nullptr;
-    if (dm && dm->is_cross_domain_blacklisted(caller, "value")) {
+    if (dm && dm->is_cross_domain_blacklisted(caller, "hello_world:value")) {
         return Result<Value>::failure(StatusCode(24), "Error: Calling domain is explicitly blacklisted");
     }
     

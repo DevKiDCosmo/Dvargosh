@@ -2,6 +2,7 @@
 #include "../modules/logger/logger_interface.hpp"
 #include "../modules/math/math_interface.hpp"
 #include "../modules/monitor/monitor_interface.hpp"
+#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <sstream>
@@ -19,6 +20,22 @@ using namespace dvargosh;
 #define ANSI_RED     "\033[31m"
 #define ANSI_BLUE    "\033[34m"
 #define ANSI_MAGENTA "\033[35m"
+
+// The signing key must come from the environment (CI secret, keyfile loader, shell export).
+// A hardcoded key in source would make module signatures decorative.
+static std::string resolve_signing_key() {
+    if (const char* env = std::getenv("DVARGOSH_SIGNING_KEY")) {
+        return std::string(env);
+    }
+    return "";
+}
+
+static void print_unsigned_mode_banner() {
+    std::cout << ANSI_BOLD << ANSI_YELLOW
+              << "[SECURITY] DVARGOSH_SIGNING_KEY is not set — running in UNSIGNED development mode.\n"
+              << "           Cryptographic signature verification is DISABLED. Do not use in production.\n"
+              << ANSI_RESET;
+}
 
 void print_banner() {
     std::cout << ANSI_CYAN << ANSI_BOLD
@@ -71,10 +88,16 @@ void run_automated_demonstration(const std::string& module_dir, const std::strin
     // 4. Cryptographic Module Loader & Signing
     print_step(4, 8, "Signing & Loading Modules into In-Process Containers");
     ModuleLoaderConfig loader_cfg;
-    loader_cfg.enforce_signatures = true;
+    loader_cfg.enforce_signatures = !secret_key.empty();
     loader_cfg.secret_signing_key = secret_key;
     loader_cfg.default_policy = SecurityPolicy::standard();
     loader_cfg.secured_memory_size = 4 * 1024 * 1024;
+
+    if (loader_cfg.enforce_signatures) {
+        std::cout << "  Signature enforcement: ON (key from DVARGOSH_SIGNING_KEY)\n";
+    } else {
+        print_unsigned_mode_banner();
+    }
 
     ModuleLoader loader(di, loader_cfg);
 
@@ -172,7 +195,7 @@ void run_automated_demonstration(const std::string& module_dir, const std::strin
 
 int main(int argc, char** argv) {
     std::string module_dir = "./build/modules";
-    std::string secret_key = "dvargosh_master_signing_key_2026";
+    std::string secret_key = resolve_signing_key();
     bool interactive = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -186,7 +209,7 @@ int main(int argc, char** argv) {
         } else if (arg == "--help" || arg == "-h") {
             std::cout << "Usage: " << argv[0] << " [options]\n"
                       << "  --modules <path>  Path to dynamic module directory (default: ./build/modules)\n"
-                      << "  --key <secret>    Cryptographic secret signing key\n"
+                      << "  --key <secret>    Cryptographic signing key (overrides DVARGOSH_SIGNING_KEY env)\n"
                       << "  --interactive, -i Run interactive CLI REPL\n"
                       << "  --help, -h        Show help\n";
             return 0;
@@ -206,6 +229,7 @@ int main(int argc, char** argv) {
     cfg.enforce_signatures = false;
     cfg.secret_signing_key = secret_key;
     ModuleLoader loader(di, cfg);
+    print_unsigned_mode_banner();
 
     // Add comprehensive search paths so standard, build, development, and dist modules are discovered
     loader.add_search_path(module_dir);

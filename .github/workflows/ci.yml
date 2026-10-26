@@ -7,9 +7,32 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# Per-run ephemeral signing key: exercises the sign/verify machinery without
+# committing any secret. Real releases inject DVARGOSH_SIGNING_KEY as a GitHub secret.
+env:
+  DVARGOSH_SIGNING_KEY: ${{ github.sha }}${{ github.run_id }}-dvargosh-ephemeral-ci-key
+
+# TODO(security): pin actions to full commit SHAs (docs/execution_plan.md WS-A)
+# once a SHA pinning pass is done; version tags are mutable.
+
 jobs:
+  secrets-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so gitleaks can scan past commits too
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   native-build-and-test:
     name: Native Build (${{ matrix.os }} - ${{ matrix.compiler }})
+    needs: secrets-scan
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -41,6 +64,9 @@ jobs:
       - name: Generate CMAKE files
         run: make pipeline
 
+      - name: Lint (module schema & conventions)
+        run: make lint
+
       - name: Run Unit Tests (CTest)
         run: |
           ctest --test-dir build --output-on-failure --verbose
@@ -49,8 +75,23 @@ jobs:
         run: |
           ./build/bin/dvargosh --modules ./build/modules
 
+  sanitize-build:
+    name: Sanitizer Build & Test (ASan + UBSan)
+    needs: secrets-scan
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Run sanitizer preset (sanitize)
+        run: |
+          cmake --preset sanitize
+          cmake --build --preset sanitize --parallel
+          ctest --preset sanitize --output-on-failure
+
   docker-container-verification:
     name: Universal Containerization (Docker Build & Verify)
+    needs: secrets-scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository

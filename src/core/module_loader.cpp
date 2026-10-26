@@ -49,7 +49,7 @@ static size_t read_module_def_quota_bytes(const std::string& mod_name, const std
     return 0;
 }
 
-static void load_signatures_from_file(const std::string& path, std::unordered_map<std::string, std::string>& sigs) {
+void load_signatures_from_file(const std::string& path, std::unordered_map<std::string, std::string>& sigs) {
     std::ifstream f(path);
     if (!f.is_open()) return;
     std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());

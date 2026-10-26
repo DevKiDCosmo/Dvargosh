@@ -34,8 +34,13 @@ find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f -name "*.de
 # Ensure source directories remain 100% pristine and free of generated files
 find "${ROOT_DIR}/modules" "${ROOT_DIR}/development_modules" -type f \( -name "_module_header.*" -o -name "*.meta.json" -o -name "_generated_*" -o -name "*Modules.cmake" \) -delete 2>/dev/null || true
 
-SECRET_KEY="dvargosh_master_signing_key_2026"
-python3 "${ROOT_DIR}/tools/dvargosh_tool.py" sign "${ROOT_DIR}/build" "${SECRET_KEY}"
+# Signing key must come from the environment — never hardcode it (docs/execution_plan.md WS-A).
+if [ -n "${DVARGOSH_SIGNING_KEY:-}" ]; then
+    python3 "${ROOT_DIR}/tools/dvargosh_tool.py" sign "${ROOT_DIR}/build" "${DVARGOSH_SIGNING_KEY}"
+else
+    echo "[SECURITY][WARN] DVARGOSH_SIGNING_KEY not set — skipping module signing (unsigned dev build)."
+    echo "                 Runtime binaries will fall back to verification-free dev mode."
+fi
 
 echo "[6/7] Running CTest & Verification Harness..."
 ctest --test-dir "${ROOT_DIR}/build" --output-on-failure

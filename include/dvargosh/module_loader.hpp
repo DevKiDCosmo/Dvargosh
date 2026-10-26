@@ -41,6 +41,13 @@ struct DiscoveredModuleInfo {
     bool is_valid = false;
 };
 
+/**
+ * @brief Parses a signatures.json file (filename → hex HMAC) into the sig map.
+ * Exposed for fuzzing/tests: the file is local disk input parsed by hand-rolled
+ * string scanning, i.e. an untrusted-input surface.
+ */
+void load_signatures_from_file(const std::string& path, std::unordered_map<std::string, std::string>& sigs);
+
 class ModuleLoader {
 public:
     explicit ModuleLoader(std::shared_ptr<DIContainer> di, ModuleLoaderConfig config = {});

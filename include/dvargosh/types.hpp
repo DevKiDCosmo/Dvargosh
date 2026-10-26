@@ -225,11 +225,29 @@ public:
     bool is_ptr() const noexcept { return std::holds_alternative<void*>(m_var); }
     bool is_bytes() const noexcept { return std::holds_alternative<std::vector<uint8_t>>(m_var); }
 
-    bool as_bool() const { return std::get<bool>(m_var); }
-    int64_t as_int() const { return std::get<int64_t>(m_var); }
+    // Typed accessors throw DvargoshException (not std::bad_variant_access) on type
+    // mismatch: a type-confused RPC argument must be a loud, catchable error at every
+    // call site — Registry::invoke already wraps method bodies accordingly.
+    [[noreturn]] void type_error(const char* accessor) const {
+        throw DvargoshException(
+            StatusCode::TypeMismatch,
+            std::string("Value::") + accessor + "(): value holds '" + to_string() + "'"
+        );
+    }
+
+    bool as_bool() const {
+        if (!is_bool()) type_error("as_bool");
+        return std::get<bool>(m_var);
+    }
+    int64_t as_int() const {
+        if (!is_int()) type_error("as_int");
+        return std::get<int64_t>(m_var);
+    }
     double as_double() const {
-        if (is_int()) return static_cast<double>(as_int());
-        return std::get<double>(m_var);
+        if (is_double()) return std::get<double>(m_var);
+        if (is_int()) return static_cast<double>(std::get<int64_t>(m_var));
+        if (is_bool()) return std::get<bool>(m_var) ? 1.0 : 0.0;
+        type_error("as_double");
     }
     const std::string& as_string() const { return std::get<std::string>(m_var); }
     void* as_ptr() const { return std::get<void*>(m_var); }

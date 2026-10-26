@@ -464,6 +464,7 @@ def generate_pipeline_demo_app():
 #include "dvargosh/generated/telecom_api.hpp"
 #include "dvargosh/generated/telecom_bind.hpp"
 #endif
+#include <cstdlib>
 #include <iostream>
 #include <cassert>
 
@@ -482,12 +483,17 @@ int main() {
 
     ScopedCallFrame host_frame("host_pipeline_app", "system");
     auto di = std::make_shared<DIContainer>();
-    const std::string secret_key = "dvargosh_master_signing_key_2026";
+    // Signing key comes from the environment; unsigned dev mode falls back to verification-free loading.
+    const char* env_key = std::getenv("DVARGOSH_SIGNING_KEY");
+    const std::string secret_key = env_key ? std::string(env_key) : std::string();
 
     ModuleLoaderConfig cfg;
-    cfg.enforce_signatures = true;
+    cfg.enforce_signatures = !secret_key.empty();
     cfg.secret_signing_key = secret_key;
     ModuleLoader loader(di, cfg);
+    if (secret_key.empty()) {
+        std::cout << "[SECURITY] DVARGOSH_SIGNING_KEY not set — unsigned development mode (signature verification DISABLED).\\n";
+    }
 
     loader.add_search_path("./build/modules");
     loader.add_search_path("./build/development_modules");
@@ -953,9 +959,12 @@ def main():
     dev_modules = []
     target_dev_dir = BUILD_DIR / "development_modules"
     if DEV_MODULES_DIR.exists():
-        target_dev_dir.mkdir(parents=True, exist_ok=True)
+        # Re-stage from scratch: copytree with dirs_exist_ok would let stale module
+        # dirs (renames, removed experiments) survive forever and pollute the schema.
         import shutil
-        shutil.copytree(DEV_MODULES_DIR, target_dev_dir, dirs_exist_ok=True)
+        if target_dev_dir.exists():
+            shutil.rmtree(target_dev_dir, ignore_errors=True)
+        shutil.copytree(DEV_MODULES_DIR, target_dev_dir)
 
     if target_dev_dir.exists():
         for item in sorted(target_dev_dir.iterdir()):
