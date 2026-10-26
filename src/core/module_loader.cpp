@@ -331,6 +331,17 @@ Result<void> ModuleLoader::load_from_file(
         }
         opt_header = header_res.value();
 
+        // Audit C1: a module must never declare itself into a reserved domain
+        // ("system" = universal privilege). Checked pre-factory, before any
+        // module code runs beyond static initializers.
+        if (is_reserved_domain_name(opt_header->domain)) {
+            dlclose(handle);
+            return Result<void>::failure(
+                StatusCode::SecurityTampering,
+                "Module header declares reserved domain '" + opt_header->domain + "'; loading rejected"
+            );
+        }
+
         // Check if module is already loaded BEFORE calling factory constructors
         {
             std::lock_guard<std::mutex> lock(m_mutex);
@@ -371,6 +382,17 @@ Result<void> ModuleLoader::load_from_file(
 
     const auto& manifest = instance->manifest();
     std::string mod_name = manifest.name;
+
+    // Audit C1: reject reserved domains declared in the runtime manifest too
+    // (covers modules whose binary header predates the check or is absent).
+    if (is_reserved_domain_name(manifest.domain)) {
+        destroy_fn(instance);
+        dlclose(handle);
+        return Result<void>::failure(
+            StatusCode::SecurityTampering,
+            "Module manifest declares reserved domain '" + manifest.domain + "'; loading rejected"
+        );
+    }
 
     // Cross-check identity between static binary header and runtime manifest
     if (opt_header.has_value()) {
@@ -606,21 +628,16 @@ const LoadedModule* ModuleLoader::get_module_info(const std::string& module_name
     return nullptr;
 }
 
-Result<size_t> ModuleLoader::auto_load_all(const std::string& secret_key) {
+Result<size_t> ModuleLoader::auto_load_all() {
     auto discovered = discover_all_modules();
-    std::string key = secret_key.empty() ? m_config.secret_signing_key : secret_key;
     size_t loaded_count = 0;
 
     for (const auto& info : discovered) {
         if (is_loaded(info.name)) continue;
 
-        std::string sig;
-        if (!key.empty()) {
-            auto sig_res = Crypto::sign_file(key, info.full_path);
-            if (sig_res.is_ok()) sig = sig_res.value();
-        }
-
-        auto load_res = load(info.name, sig);
+        // Audit C2: no self-signing. With enforcement on, load() verifies against
+        // the pre-loaded signatures.json entries; missing signatures are rejected.
+        auto load_res = load(info.name);
         if (load_res.is_ok()) {
             loaded_count++;
         }
@@ -628,9 +645,8 @@ Result<size_t> ModuleLoader::auto_load_all(const std::string& secret_key) {
     return Result<size_t>::success(loaded_count);
 }
 
-Result<size_t> ModuleLoader::auto_load_matching(const std::string& pattern, const std::string& secret_key) {
+Result<size_t> ModuleLoader::auto_load_matching(const std::string& pattern) {
     auto discovered = discover_all_modules();
-    std::string key = secret_key.empty() ? m_config.secret_signing_key : secret_key;
     size_t loaded_count = 0;
 
     auto matches = [](const std::string& str, const std::string& pat) {
@@ -659,13 +675,7 @@ Result<size_t> ModuleLoader::auto_load_matching(const std::string& pattern, cons
         }
         if (is_loaded(info.name)) continue;
 
-        std::string sig;
-        if (!key.empty()) {
-            auto sig_res = Crypto::sign_file(key, info.full_path);
-            if (sig_res.is_ok()) sig = sig_res.value();
-        }
-
-        auto load_res = load(info.name, sig);
+        auto load_res = load(info.name);
         if (load_res.is_ok()) {
             loaded_count++;
         }
@@ -673,9 +683,8 @@ Result<size_t> ModuleLoader::auto_load_matching(const std::string& pattern, cons
     return Result<size_t>::success(loaded_count);
 }
 
-Result<void> ModuleLoader::auto_load_domain(const std::string& domain_name, const std::string& secret_key) {
+Result<void> ModuleLoader::auto_load_domain(const std::string& domain_name) {
     auto discovered = discover_all_modules();
-    std::string key = secret_key.empty() ? m_config.secret_signing_key : secret_key;
 
     std::string candidate_mod = domain_name;
     auto colon_pos = domain_name.find(':');
@@ -700,12 +709,8 @@ Result<void> ModuleLoader::auto_load_domain(const std::string& domain_name, cons
         if (matches) {
             if (is_loaded(info.name)) return Result<void>::success();
 
-            std::string sig;
-            if (!key.empty()) {
-                auto sig_res = Crypto::sign_file(key, info.full_path);
-                if (sig_res.is_ok()) sig = sig_res.value();
-            }
-            return load(info.name, sig);
+            // Audit C2: no self-signing — verification relies on signatures.json.
+            return load(info.name);
         }
     }
     return Result<void>::failure(StatusCode::NotFound, "No discovered module provides domain '" + domain_name + "'");

@@ -193,8 +193,9 @@ public:
 
             // If an alias override was specified, also register the canonical entry.name as an alias pointing to registered_name,
             // so callers can invoke via either name seamlessly.
+            // Audit C5: pass the owning module so cross-provider alias hijacking is rejected.
             if (it != alias_map.end() && !it->second.empty() && it->second != entry.name) {
-                ctx.registry()->register_alias(entry.name, registered_name);
+                ctx.registry()->register_alias(entry.name, registered_name, manifest().name);
             }
         }
 

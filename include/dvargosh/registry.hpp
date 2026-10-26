@@ -174,7 +174,17 @@ public:
     std::string get_method_domain(const std::string& method_name) const;
 
     // --- Alias Resolution for Namespace Distinguishment ---
-    Result<void> register_alias(const std::string& alias, const std::string& target_method);
+    /**
+     * @brief Registers an alias name resolving to target_method.
+     * Audit C5: when the caller's provider module is given, aliasing another
+     * module's method is rejected (no cross-provider method hijacking). Aliases
+     * also never shadow a real method — invoke() resolves direct names first.
+     */
+    Result<void> register_alias(
+        const std::string& alias,
+        const std::string& target_method,
+        const std::string& provider_module = ""
+    );
     bool has_alias(const std::string& alias) const;
     std::string resolve_method_name(const std::string& name_or_alias) const;
 

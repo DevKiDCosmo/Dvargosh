@@ -141,8 +141,15 @@ Result<std::unique_ptr<ModuleContext>> DIContainer::create_module_context(
     const SecurityPolicy& policy,
     size_t secured_memory_bytes
 ) {
-    // Ensure domain exists
+    // Ensure domain exists (audit C1: module-declared reserved domains are rejected;
+    // this is the defense-in-depth backstop behind the loader-side check)
     std::string dom = domain_name.empty() ? "default" : domain_name;
+    if (is_reserved_domain_name(dom)) {
+        return Result<std::unique_ptr<ModuleContext>>::failure(
+            StatusCode::SecurityTampering,
+            "Module '" + module_name + "' requested reserved domain '" + dom + "'; context creation denied"
+        );
+    }
     if (!m_domain_mgr->has_domain(dom)) {
         m_domain_mgr->create_domain(dom, policy);
     }

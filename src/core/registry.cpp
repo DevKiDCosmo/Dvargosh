@@ -169,11 +169,30 @@ std::string Registry::get_method_domain(const std::string& method_name) const {
     return it != m_methods.end() ? it->second.domain : "";
 }
 
-Result<void> Registry::register_alias(const std::string& alias, const std::string& target_method) {
+Result<void> Registry::register_alias(
+    const std::string& alias,
+    const std::string& target_method,
+    const std::string& provider_module
+) {
     if (alias.empty() || target_method.empty()) {
         return Result<void>::failure(StatusCode::InvalidArg, "Alias and target method cannot be empty");
     }
     std::lock_guard<std::mutex> lock(m_mutex);
+
+    // Audit C5: a module may not alias another module's method — that would
+    // redirect every caller of the target to the alias author's code.
+    if (!provider_module.empty()) {
+        auto it = m_methods.find(target_method);
+        if (it != m_methods.end() && it->second.provider_module != provider_module) {
+            return Result<void>::failure(
+                StatusCode::PermissionDenied,
+                "Alias '" + alias + "' rejected: target method '" + target_method +
+                "' is owned by module '" + it->second.provider_module +
+                "', not '" + provider_module + "'"
+            );
+        }
+    }
+
     m_aliases[alias] = target_method;
     return Result<void>::success();
 }
@@ -203,8 +222,19 @@ Result<Value> Registry::invoke(
     // TODO: SYSTEM DOMAINS HAVE TO BE RESOLVE
 
 
-    // 1. Resolve alias override to canonical method name
-    std::string canonical_method = resolve_method_name(method_name);
+    // 1. Resolve the canonical method name.
+    // Audit C5: a REAL method always wins over an alias with the same name —
+    // aliases must never shadow registered methods (hijack prevention).
+    std::string canonical_method;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_methods.find(method_name) != m_methods.end()) {
+            canonical_method = method_name;
+        } else {
+            auto ait = m_aliases.find(method_name);
+            canonical_method = (ait != m_aliases.end()) ? ait->second : method_name;
+        }
+    }
 
     // 2. Automatic domain resolution & anti-spoofing verification
     std::string effective_caller_domain = caller_domain;

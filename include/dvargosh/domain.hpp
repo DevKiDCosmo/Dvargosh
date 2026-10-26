@@ -75,6 +75,14 @@ private:
     std::unordered_map<std::string, std::shared_ptr<Vault>> m_vaults;
 };
 
+/**
+ * @brief True if the domain name is reserved for the host runtime.
+ * Modules may never declare themselves into a reserved domain: "system" holds
+ * universal privilege across the registry, vaults, and context resolution.
+ * Host code creating domains explicitly (DomainManager::create_domain) is trusted.
+ */
+bool is_reserved_domain_name(const std::string& name);
+
 class ModuleLoader; // Forward declaration
 
 /**

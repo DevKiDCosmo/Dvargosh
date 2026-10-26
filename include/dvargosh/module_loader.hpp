@@ -80,26 +80,27 @@ public:
 
     /**
      * @brief Automatically discovers and loads all modules found in configured search paths.
-     * @param secret_key Optional HMAC-SHA256 signing key (uses config signing key if empty).
+     *
+     * Audit C2: the loader NEVER signs binaries itself. Verification uses only the
+     * signatures from signatures.json (pre-loaded per search path) when enforcement
+     * is on; unsigned dev runs (no key) load without verification.
      * @return Number of modules successfully loaded.
      */
-    Result<size_t> auto_load_all(const std::string& secret_key = "");
+    Result<size_t> auto_load_all();
 
     /**
      * @brief Automatically loads modules matching a pattern (e.g. "crypto_*", "*demo*").
      * @param pattern Glob or substring filter pattern.
-     * @param secret_key Optional HMAC-SHA256 signing key.
      * @return Number of matching modules successfully loaded.
      */
-    Result<size_t> auto_load_matching(const std::string& pattern, const std::string& secret_key = "");
+    Result<size_t> auto_load_matching(const std::string& pattern);
 
     /**
      * @brief Automatically discovers and loads the module providing a specific domain.
      * @param domain_name Target domain identifier (e.g. "accelerator:hash", "demo_pkg:vault").
-     * @param secret_key Optional HMAC-SHA256 signing key.
      * @return Success if the provider module was resolved and loaded, or error if not found.
      */
-    Result<void> auto_load_domain(const std::string& domain_name, const std::string& secret_key = "");
+    Result<void> auto_load_domain(const std::string& domain_name);
 
     // Register & load a static / in-memory module
     Result<void> load_static_module(

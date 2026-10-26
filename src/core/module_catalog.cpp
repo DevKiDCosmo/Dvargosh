@@ -44,8 +44,7 @@ bool ModuleCatalog::exist_domain(const std::string_view& module) const {
 
 Result<size_t> ModuleCatalog::load_all(
     ModuleLoader& loader,
-    const std::string& modules_dir,
-    const std::string& signing_key
+    const std::string& modules_dir
 ) {
 #if defined(__APPLE__)
     std::string ext = ".dylib";
@@ -63,16 +62,9 @@ Result<size_t> ModuleCatalog::load_all(
         }
         std::string full_path = modules_dir + "/" + filename;
 
-        std::string sig = "";
-        if (!signing_key.empty()) {
-            auto sig_res = Crypto::sign_file(signing_key, full_path);
-            if (sig_res.is_ok()) {
-                sig = sig_res.value();
-            }
-        }
-
         SecurityPolicy policy(desc.permissions, desc.secured_memory_size * 2);
-        auto load_res = loader.load_from_file(full_path, sig, &policy);
+        // Audit C2: no self-signing — the loader verifies against signatures.json.
+        auto load_res = loader.load_from_file(full_path, "", &policy);
         if (!load_res.is_ok()) {
             return Result<size_t>::failure(load_res.status(), "Failed to load '" + name + "': " + load_res.error_message());
         }
@@ -85,8 +77,7 @@ Result<size_t> ModuleCatalog::load_all(
 Result<size_t> ModuleCatalog::load_domain(
     const std::string& domain,
     ModuleLoader& loader,
-    const std::string& modules_dir,
-    const std::string& signing_key
+    const std::string& modules_dir
 ) {
 #if defined(__APPLE__)
     std::string ext = ".dylib";
@@ -105,16 +96,9 @@ Result<size_t> ModuleCatalog::load_domain(
         }
         std::string full_path = modules_dir + "/" + filename;
 
-        std::string sig = "";
-        if (!signing_key.empty()) {
-            auto sig_res = Crypto::sign_file(signing_key, full_path);
-            if (sig_res.is_ok()) {
-                sig = sig_res.value();
-            }
-        }
-
         SecurityPolicy policy(desc.permissions, desc.secured_memory_size * 2);
-        auto load_res = loader.load_from_file(full_path, sig, &policy);
+        // Audit C2: no self-signing — the loader verifies against signatures.json.
+        auto load_res = loader.load_from_file(full_path, "", &policy);
         if (!load_res.is_ok()) {
             return Result<size_t>::failure(load_res.status(), "Failed to load '" + name + "': " + load_res.error_message());
         }
