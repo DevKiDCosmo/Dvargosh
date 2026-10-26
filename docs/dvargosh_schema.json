@@ -418,6 +418,62 @@
           "hover_tooltip": "### Dvargosh Service: `telecom_route_packet`\n* **Domain**: `telecom:packet`\n* **Description**: Pipeline-attributed service method 'telecom_route_packet'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"telecom_route_packet\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nTelecomProxy::telecom_route_packet(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"telecom_route_packet\");\n```\n"
         }
       ]
+    },
+    {
+      "name": "telecom",
+      "folder_name": "telecomFAKE",
+      "version": "1.0.0",
+      "description": "Telecom Packet Routing Module",
+      "author": "Dvargosh CI",
+      "secured_memory_kb": 2048,
+      "domains": [
+        "telecom:packet",
+        "*"
+      ],
+      "sources": [
+        "telecom.services.cpp",
+        "telecom_module.cpp"
+      ],
+      "services": [
+        {
+          "name": "telecom_echo",
+          "domain": "telecom:packet",
+          "description": "Pipeline-attributed service method 'telecom_echo'",
+          "source_file": "telecom.services.cpp",
+          "signature": "std::string telecom_echo(const std::string& input)",
+          "return_type": "std::string",
+          "parameters": "const std::string& input",
+          "security": {
+            "required_permissions": [
+              "DynamicInvoke"
+            ],
+            "scoped_domain_enforcement": true
+          },
+          "rpc_syntax": "`registry->invoke(\"telecom_echo\", {...})`",
+          "typed_proxy_syntax": "`TelecomProxy::telecom_echo(ctx, ...)`",
+          "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"telecom_echo\")`",
+          "hover_tooltip": "### Dvargosh Service: `telecom_echo`\n* **Domain**: `telecom:packet`\n* **Description**: Pipeline-attributed service method 'telecom_echo'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"telecom_echo\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nTelecomProxy::telecom_echo(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"telecom_echo\");\n```\n"
+        },
+        {
+          "name": "telecom_route_packet",
+          "domain": "telecom:packet",
+          "description": "Pipeline-attributed service method 'telecom_route_packet'",
+          "source_file": "telecom.services.cpp",
+          "signature": "std::string telecom_route_packet(const std::string& packet)",
+          "return_type": "std::string",
+          "parameters": "const std::string& packet",
+          "security": {
+            "required_permissions": [
+              "DynamicInvoke"
+            ],
+            "scoped_domain_enforcement": true
+          },
+          "rpc_syntax": "`registry->invoke(\"telecom_route_packet\", {...})`",
+          "typed_proxy_syntax": "`TelecomProxy::telecom_route_packet(ctx, ...)`",
+          "automapper_syntax": "`mapper.bind<ReturnType, ArgTypes...>(\"telecom_route_packet\")`",
+          "hover_tooltip": "### Dvargosh Service: `telecom_route_packet`\n* **Domain**: `telecom:packet`\n* **Description**: Pipeline-attributed service method 'telecom_route_packet'\n* **RPC Invocation**:\n```cpp\nctx.registry()->invoke(\"telecom_route_packet\", {args});\n```\n* **Direct Typed Call**:\n```cpp\nTelecomProxy::telecom_route_packet(ctx, args);\n```\n* **AutoMapper Binding**:\n```cpp\nauto fn = mapper.bind<ReturnType, ...>(\"telecom_route_packet\");\n```\n"
+        }
+      ]
     }
   ]
 }

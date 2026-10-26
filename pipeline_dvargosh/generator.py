@@ -62,8 +62,13 @@ def scan_annotated_functions(folder: Path):
             r'DVARGOSH_EXPORT_ALIAS_OVERRIDE\s*\(\s*([a-zA-Z0-9_]+)\s*,\s*"([^"]+)"\s*\)',
             code
         ))
+        req_args_matches = dict(re.findall(
+            r'DVARGOSH_EXPORT_REQUIRED_ARGS\s*\(\s*([a-zA-Z0-9_]+)\s*,\s*([0-9]+)\s*\)',
+            code
+        ))
         for fn_name, domain, desc in exp_matches:
             alias = alias_matches.get(fn_name, "")
+            req_args = int(req_args_matches.get(fn_name, 0))
             exported.append({
                 "function": fn_name,
                 "domain": domain,
@@ -71,6 +76,7 @@ def scan_annotated_functions(folder: Path):
                 "source_file": cpp.name,
                 "is_macro_export": True,
                 "alias": alias,
+                "required_args": req_args,
                 "ret_type": "dvargosh::Value",
                 "params": "const std::vector<dvargosh::Value>& args"
             })
@@ -91,6 +97,11 @@ def scan_annotated_functions(folder: Path):
                 fn_name = fn_match.group(2).strip()
                 params = fn_match.group(3).strip()
 
+                param_count = 0
+                if params and params != "void":
+                    param_count = len([p for p in params.split(",") if p.strip()])
+                req_args = int(req_args_matches.get(fn_name, param_count))
+
                 annotated.append({
                     "function": fn_name,
                     "domain": domain,
@@ -98,6 +109,7 @@ def scan_annotated_functions(folder: Path):
                     "source_file": cpp.name,
                     "ret_type": ret_type,
                     "params": params,
+                    "required_args": req_args,
                     "is_macro_export": False
                 })
 
@@ -153,6 +165,12 @@ def generate_registration_cpp(folder: Path, annotated_fns, reg_dir: Path = None)
         lines.append(f"// Bridge for {fn['function']} (Domain: {fn['domain']})")
         lines.append(f"DVARGOSH_EXPORT_FN({fn['function']}, \"{fn['domain']}\", \"{fn['description']}\") {{")
 
+        req_cnt = fn.get("required_args", 0)
+        if req_cnt > 0:
+            lines.append(f"    if (args.size() < {req_cnt}) {{")
+            lines.append(f"        return Result<Value>::failure(StatusCode::InvalidArg, \"Method '{fn['function']}' requires at least {req_cnt} argument(s), but only \" + std::to_string(args.size()) + \" provided.\");")
+            lines.append("    }")
+
         if "std::string" in fn["params"]:
             lines.append("    std::string arg0 = args.empty() ? \"\" : args[0].to_string();")
             lines.append(f"    auto res = {fn['function']}(arg0);")
@@ -176,7 +194,8 @@ def generate_registration_cpp(folder: Path, annotated_fns, reg_dir: Path = None)
         # The alias (module.function) is the thing that the service is registered as.
         # The domain is omitted from the alias name for clean concise naming.
         alias = f"{mod_name}.{fn['function']}"
-        lines.append(f"DVARGOSH_EXPORT_ALIAS_OVERRIDE({fn['function']}, \"{alias}\");\n")
+        lines.append(f"DVARGOSH_EXPORT_ALIAS_OVERRIDE({fn['function']}, \"{alias}\");")
+        lines.append(f"DVARGOSH_EXPORT_REQUIRED_ARGS({fn['function']}, {req_cnt});\n")
 
     lines.append("} // namespace dvargosh\n")
 

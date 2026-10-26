@@ -41,6 +41,11 @@ struct AutoAliasEntry {
     std::string alias_override;
 };
 
+struct AutoRequiredArgsEntry {
+    std::string target_name;
+    size_t min_args;
+};
+
 class AutoFunctionRegistry {
 public:
     static AutoFunctionRegistry& instance();
@@ -53,6 +58,10 @@ public:
         m_aliases.push_back(std::move(alias));
     }
 
+    void add_required_args(AutoRequiredArgsEntry req) {
+        m_required_args.push_back(std::move(req));
+    }
+
     const std::vector<AutoFunctionEntry>& entries() const noexcept {
         return m_entries;
     }
@@ -61,15 +70,21 @@ public:
         return m_aliases;
     }
 
+    const std::vector<AutoRequiredArgsEntry>& required_args() const noexcept {
+        return m_required_args;
+    }
+
     void clear() {
         m_entries.clear();
         m_aliases.clear();
+        m_required_args.clear();
     }
 
 private:
     AutoFunctionRegistry() = default;
     std::vector<AutoFunctionEntry> m_entries;
     std::vector<AutoAliasEntry> m_aliases;
+    std::vector<AutoRequiredArgsEntry> m_required_args;
 };
 
 struct AutoFunctionRegistrar {
@@ -92,6 +107,15 @@ struct AutoFunctionAliasRegistrar {
     }
 };
 
+struct AutoFunctionRequiredArgsRegistrar {
+    AutoFunctionRequiredArgsRegistrar(
+        const std::string& target_name,
+        size_t min_args
+    ) {
+        AutoFunctionRegistry::instance().add_required_args({target_name, min_args});
+    }
+};
+
 class IModule {
 public:
     virtual ~IModule() = default;
@@ -110,10 +134,16 @@ public:
         auto& registry = AutoFunctionRegistry::instance();
         const auto& entries = registry.entries();
         const auto& aliases = registry.aliases();
+        const auto& req_args = registry.required_args();
 
         std::unordered_map<std::string, std::string> alias_map;
         for (const auto& al : aliases) {
             alias_map[al.target_name] = al.alias_override;
+        }
+
+        std::unordered_map<std::string, size_t> req_args_map;
+        for (const auto& req : req_args) {
+            req_args_map[req.target_name] = req.min_args;
         }
 
         for (const auto& entry : entries) {
@@ -129,12 +159,35 @@ public:
                 registered_name = it->second;
             }
 
+            DynamicMethodFn fn_to_register = entry.fn;
+            auto req_it = req_args_map.find(entry.name);
+            if (req_it != req_args_map.end() && req_it->second > 0) {
+                size_t needed = req_it->second;
+                fn_to_register = [orig_fn = entry.fn, needed, registered_name](const std::vector<Value>& args) -> Result<Value> {
+                    if (args.size() < needed) {
+                        return Result<Value>::failure(
+                            StatusCode::InvalidArg,
+                            "Method '" + registered_name + "' requires at least " + std::to_string(needed) +
+                            " argument(s), but only " + std::to_string(args.size()) + " provided."
+                        );
+                    }
+                    if (args.size() > needed) {
+                        return Result<Value>::failure(
+                            StatusCode::InvalidArg,
+                            "Method '" + registered_name + "' requires at most " + std::to_string(needed) +
+                            " argument(s), but " + std::to_string(args.size()) + " provided. This is due to buffer overflow protection."
+                        );
+                    }
+                    return orig_fn(args);
+                };
+            }
+
             ctx.registry()->register_method(
                 registered_name,
                 entry.description,
                 manifest().name,
                 dom,
-                entry.fn,
+                std::move(fn_to_register),
                 &ctx.policy()
             );
 
@@ -179,6 +232,12 @@ using ModuleBuildIdFn = const char* (*)();
 #define DVARGOSH_EXPORT_ALIAS_OVERRIDE(fn_name, alias_override) \
     [[maybe_unused]] static const dvargosh::AutoFunctionAliasRegistrar _dv_alias_##fn_name( \
         #fn_name, alias_override \
+    );
+
+// Enforces minimum required arguments at module load-time and auto-generation time
+#define DVARGOSH_EXPORT_REQUIRED_ARGS(fn_name, min_args) \
+    [[maybe_unused]] static const dvargosh::AutoFunctionRequiredArgsRegistrar _dv_req_args_##fn_name( \
+        #fn_name, static_cast<size_t>(min_args) \
     );
 
 // Attribute-like automatic function export macro for non-monolithic source files

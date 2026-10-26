@@ -123,5 +123,6 @@ DVARGOSH_EXPORT_FN(just_true, "value", "JUST TRUE") {
 }
 
 DVARGOSH_EXPORT_ALIAS_OVERRIDE(just_true, "k");
+// DVARGOSH_EXPORT_REQUIRED_ARGS(just_true, 1);
 
 } // namespace dvargosh
