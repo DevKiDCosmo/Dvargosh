@@ -102,6 +102,7 @@ set(CORE_SOURCES
     src/core/execution_context.cpp
     src/core/command_memory.cpp
     src/core/vault.cpp
+    src/core/telemetry.cpp
 )
 
 add_library(dvargosh_core SHARED ${CORE_SOURCES})
@@ -179,6 +180,7 @@ set(CORE_TEST_SOURCES
     tests/test_isolation_and_secure_memory.cpp
     tests/test_security_hardening.cpp
     tests/test_binder.cpp
+    tests/test_telemetry.cpp
 )
 
 set(MODULE_TEST_SOURCES
@@ -187,6 +189,7 @@ set(MODULE_TEST_SOURCES
     modules/worker/test/test_worker.cpp
     modules/monitor/test/test_monitor.cpp
     modules/stdtext/test/test_stdtext.cpp
+    modules/stdnet/test/test_stdnet.cpp
     modules/demo_pkg/test/test_demo_pkg.cpp
 )
 

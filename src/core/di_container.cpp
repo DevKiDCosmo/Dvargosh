@@ -1,6 +1,7 @@
 #include "dvargosh/di_container.hpp"
 #include "dvargosh/runtime.hpp"
 #include "dvargosh/execution_context.hpp"
+#include "dvargosh/telemetry.hpp"
 #include <iostream>
 
 namespace dvargosh {
@@ -16,7 +17,8 @@ ModuleContext::ModuleContext(
     std::unique_ptr<SecuredMemorySpace> secured_memory,
     std::unique_ptr<TrackedAllocator> tracked_allocator,
     std::unique_ptr<ArenaAllocator> arena,
-    std::shared_ptr<ModuleCatalog> modules
+    std::shared_ptr<ModuleCatalog> modules,
+    TelemetryHub* telemetry
 ) : m_module_name(std::move(module_name)),
     m_domain_name(std::move(domain_name)),
     m_policy(std::move(policy)),
@@ -27,7 +29,8 @@ ModuleContext::ModuleContext(
     m_domain_mgr(std::move(domain_mgr)),
     m_secured_memory(std::move(secured_memory)),
     m_tracked_allocator(std::move(tracked_allocator)),
-    m_arena(std::move(arena)) {
+    m_arena(std::move(arena)),
+    m_telemetry(telemetry) {
     if (!m_modules) {
         m_modules = std::make_shared<ModuleCatalog>();
         register_standard_modules(*m_modules);
@@ -38,9 +41,19 @@ ModuleContext::ModuleContext(
             domain->add_module(m_module_name);
         }
     }
+    // Watchdog revocation: the hub tracks this module's policy epoch so it can
+    // flip it (revoke) when a watchdog threshold breaches (docs S3).
+    if (m_telemetry) {
+        m_telemetry->track_policy(m_module_name, m_policy);
+    }
 }
 
 ModuleContext::~ModuleContext() {
+    // 0. Detach from the telemetry hub before anything else touches state.
+    if (m_telemetry) {
+        m_telemetry->untrack_policy(m_module_name);
+    }
+
     // 1. Remove from domain
     if (m_domain_mgr && !m_domain_name.empty()) {
         auto domain = m_domain_mgr->get_domain(m_domain_name);
@@ -79,6 +92,14 @@ SecuredMemorySpace* ModuleContext::domain_space() noexcept {
         return m_domain_mgr->get_domain_space(m_domain_name);
     }
     return nullptr;
+}
+
+Result<void> ModuleContext::record_metric(const std::string& name, double value) {
+    if (!m_telemetry) {
+        return Result<void>::failure(StatusCode::NullPointer, "TelemetryHub is not available");
+    }
+    m_telemetry->record("mod." + m_module_name + "." + name, value);
+    return Result<void>::success();
 }
 
 void* ModuleContext::allocate_command_memory(size_t size, size_t alignment) {
@@ -123,9 +144,11 @@ DIContainer::DIContainer()
       m_modules(std::make_shared<ModuleCatalog>()),
       m_resource_mgr(std::make_shared<ResourceManager>()),
       m_event_bus(std::make_shared<EventBus>()),
-      m_domain_mgr(std::make_shared<DomainManager>()) {
+      m_domain_mgr(std::make_shared<DomainManager>()),
+      m_telemetry(std::make_unique<TelemetryHub>(m_event_bus)) {
     register_standard_modules(*m_modules);
     m_registry->set_domain_manager(m_domain_mgr.get());
+    m_registry->set_telemetry_hub(m_telemetry.get());
     register_instance<Registry>(m_registry);
     register_instance<ModuleCatalog>(m_modules);
     register_instance<ResourceManager>(m_resource_mgr);
@@ -133,7 +156,13 @@ DIContainer::DIContainer()
     register_instance<DomainManager>(m_domain_mgr);
 }
 
-DIContainer::~DIContainer() = default;
+DIContainer::~DIContainer() {
+    // Detach the telemetry hook before member teardown: the hub dies first
+    // (declared after the registry), so the registry must not dereference it.
+    if (m_registry) {
+        m_registry->set_telemetry_hub(nullptr);
+    }
+}
 
 Result<std::unique_ptr<ModuleContext>> DIContainer::create_module_context(
     const std::string& module_name,
@@ -190,7 +219,8 @@ Result<std::unique_ptr<ModuleContext>> DIContainer::create_module_context(
         std::move(secured_mem),
         std::move(tracked_alloc),
         std::move(arena),
-        m_modules
+        m_modules,
+        m_telemetry.get()
     );
 
     return Result<std::unique_ptr<ModuleContext>>::success(std::move(ctx));

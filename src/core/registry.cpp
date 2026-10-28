@@ -1,8 +1,10 @@
 #include "dvargosh/registry.hpp"
 #include "dvargosh/domain.hpp"
 #include "dvargosh/execution_context.hpp"
+#include "dvargosh/telemetry.hpp"
 #include <iostream>
 #include <algorithm>
+#include <chrono>
 
 namespace dvargosh {
 
@@ -255,6 +257,14 @@ Result<Value> Registry::invoke(
         if (!perm_res.is_ok()) {
             return Result<Value>::failure(perm_res.status(), perm_res.error_message());
         }
+        // Watchdog kill switch: a revoked policy (TelemetryHub threshold breach)
+        // is denied here — the revocation is shared via the policy's epoch token.
+        if (caller_policy->is_revoked()) {
+            return Result<Value>::failure(
+                StatusCode::PermissionDenied,
+                "Caller '" + effective_caller_module + "' was revoked by the telemetry watchdog"
+            );
+        }
     }
 
     DynamicMethodFn fn;
@@ -310,14 +320,43 @@ Result<Value> Registry::invoke(
         }
     }
 
+    // Native telemetry accounting: every dispatch counts and is timed (docs S3).
+    // Failure-path accounting too — errors per method are exactly what a
+    // watchdog threshold wants to watch.
+    TelemetryHub* tel = m_telemetry_hub;
+    auto t0 = tel ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+
     try {
         ScopedCallFrame frame(target_module, target_domain, effective_caller_module, effective_caller_domain);
-        return fn(args);
+        Result<Value> out = fn(args);
+        if (tel) {
+            tel->increment("invoke.count." + canonical_method);
+            tel->increment("invoke.count.total");
+            if (!out.is_ok()) {
+                tel->increment("invoke.errors." + canonical_method);
+            }
+            tel->record(
+                "invoke.duration_ms." + canonical_method,
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+        }
+        return out;
     } catch (const DvargoshException& e) {
+        if (tel) {
+            tel->increment("invoke.count." + canonical_method);
+            tel->increment("invoke.errors." + canonical_method);
+            tel->record(
+                "invoke.duration_ms." + canonical_method,
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+        }
         return Result<Value>::failure(e.code(), e.what());
     } catch (const std::exception& e) {
+        if (tel) {
+            tel->increment("invoke.count." + canonical_method);
+            tel->increment("invoke.errors." + canonical_method);
+        }
         return Result<Value>::failure(StatusCode::InvocationFailed, std::string("Method invocation error: ") + e.what());
     } catch (...) {
+        if (tel) tel->increment("invoke.errors." + canonical_method);
         return Result<Value>::failure(StatusCode::InvocationFailed, "Unknown error during method invocation");
     }
 }

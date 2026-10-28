@@ -377,7 +377,13 @@ def main():
         hpp, cpp = generate_header_files(info, out_dir, headers_dir)
         generated += 1
         if args.verbose or True:
-            print(f"  * Generated metadata header for module '{info['name']}': {hpp.relative_to(ROOT_DIR)}, {cpp.relative_to(ROOT_DIR)}")
+            try:
+                hpp_rel = hpp.relative_to(ROOT_DIR)
+                cpp_rel = cpp.relative_to(ROOT_DIR)
+            except ValueError:
+                hpp_rel = hpp
+                cpp_rel = cpp
+            print(f"  * Generated metadata header for module '{info['name']}': {hpp_rel}, {cpp_rel}")
 
     print(f"[dvargosh] Successfully generated metadata headers and companion JSON manifests in build for {generated} modules.")
 

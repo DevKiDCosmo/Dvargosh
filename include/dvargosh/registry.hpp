@@ -60,6 +60,8 @@ public:
 
     void set_domain_manager(DomainManager* dm) { m_domain_mgr = dm; }
     DomainManager* domain_manager() const noexcept { return m_domain_mgr; }
+    // TelemetryHub is owned by the DIContainer; raw hook, may be null.
+    void set_telemetry_hub(class TelemetryHub* hub) { m_telemetry_hub = hub; }
 
     // Fallback handler for unresolved functions / services
     void set_unresolved_handler(UnresolvedHandler handler) {
@@ -213,6 +215,7 @@ private:
 
     mutable std::mutex m_mutex;
     DomainManager* m_domain_mgr = nullptr;
+    class TelemetryHub* m_telemetry_hub = nullptr;
     UnresolvedHandler m_unresolved_handler = nullptr;
     std::unordered_map<std::string, ServiceDescriptor> m_services;
     std::unordered_map<std::string, MethodDescriptor> m_methods;

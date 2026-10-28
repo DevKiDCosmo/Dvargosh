@@ -1,7 +1,9 @@
 #pragma once
 
 #include "types.hpp"
+#include <atomic>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 #include <unordered_set>
@@ -73,6 +75,10 @@ private:
 
 /**
  * @brief Active Security Policy governing permissions, memory quotas, and cross-module checks.
+ *
+ * Carries a shared revocation epoch token (TelemetryHub watchdog kill switch):
+ * copies of the policy share the token, so a revocation is observed by every
+ * holder — Registry::invoke refuses dispatch for revoked policies.
  */
 class SecurityPolicy {
 public:
@@ -84,6 +90,24 @@ public:
     size_t max_memory_bytes() const noexcept { return m_max_memory_bytes; }
     void set_max_memory_bytes(size_t bytes) { m_max_memory_bytes = bytes; }
 
+    // Revocation epoch (0 = active, non-zero = revoked). Token is shared across
+    // policy copies; TelemetryHub::revoke_policy flips it and every holder sees it.
+    bool is_revoked() const noexcept {
+        return m_revocation_epoch->load(std::memory_order_relaxed) != 0;
+    }
+    void revoke() noexcept {
+        m_revocation_epoch->store(1, std::memory_order_relaxed);
+    }
+    void restore() noexcept {
+        m_revocation_epoch->store(0, std::memory_order_relaxed);
+    }
+    void attach_revocation_token(std::shared_ptr<std::atomic<uint32_t>> token) {
+        if (token) m_revocation_epoch = std::move(token);
+    }
+    std::shared_ptr<std::atomic<uint32_t>> revocation_token() const noexcept {
+        return m_revocation_epoch;
+    }
+
     Result<void> check(Permission p, const std::string& module_name) const;
     void enforce(Permission p, const std::string& module_name) const;
 
@@ -94,6 +118,8 @@ public:
 private:
     PermissionSet m_permissions;
     size_t m_max_memory_bytes = 16 * 1024 * 1024;
+    std::shared_ptr<std::atomic<uint32_t>> m_revocation_epoch =
+        std::make_shared<std::atomic<uint32_t>>(0);
 };
 
 } // namespace dvargosh

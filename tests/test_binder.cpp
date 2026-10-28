@@ -57,19 +57,19 @@ public:
             .result();
     }
 
-    // Registers bindings without a full loader cycle. Contexts are kept alive in
-    // a static sink for the process lifetime: destroying a ModuleContext would
-    // unregister its methods from the (shared_ptr-kept) registry mid-test.
+    // Registers bindings without a full loader cycle. The sink owns BOTH the
+    // DIContainer and its contexts so static teardown destroys them LIFO-safe:
+    // a ModuleContext must never outlive its DIContainer's TelemetryHub.
     static bool install(std::shared_ptr<DIContainer> di) {
         auto ctx_res = di->create_module_context("binder_mod", "binder", SecurityPolicy::standard());
         if (!ctx_res.is_ok()) return false;
         if (!install_bindings(*ctx_res.value()).is_ok()) return false;
-        context_sink().push_back(std::move(ctx_res.value()));
+        context_sink().emplace_back(std::move(di), std::move(ctx_res.value()));
         return true;
     }
 
-    static std::vector<std::unique_ptr<ModuleContext>>& context_sink() {
-        static std::vector<std::unique_ptr<ModuleContext>> s_ctxs;
+    static std::vector<std::pair<std::shared_ptr<DIContainer>, std::unique_ptr<ModuleContext>>>& context_sink() {
+        static std::vector<std::pair<std::shared_ptr<DIContainer>, std::unique_ptr<ModuleContext>>> s_ctxs;
         return s_ctxs;
     }
 };

@@ -140,24 +140,34 @@ template <auto Fn>
 DynamicMethodFn make_wrapper(std::string method_name) {
     using traits = fn_traits<decltype(Fn)>;
     using R = typename traits::ret;
-    return [method_name = std::move(method_name)](const std::vector<Value>& args) -> Result<Value> {
-        if (args.size() != traits::arity) {
-            return Result<Value>::failure(
-                StatusCode::InvalidArg,
-                "Method '" + method_name + "' expects exactly " + std::to_string(traits::arity) +
-                " argument(s), but " + std::to_string(args.size()) + " provided"
-            );
-        }
-        try {
-            return invoke_bound<Fn, R>(args, typename traits::arg_types{});
-        } catch (const DvargoshException& e) {
-            return Result<Value>::failure(e.code(), e.what());
-        } catch (const std::exception& e) {
-            return Result<Value>::failure(StatusCode::InvocationFailed, std::string("Binder: ") + e.what());
-        } catch (...) {
-            return Result<Value>::failure(StatusCode::InvocationFailed, "Binder: unknown error in '" + method_name + "'");
-        }
-    };
+
+    if constexpr (std::is_same_v<R, Result<Value>> && traits::arity == 1 &&
+                  std::is_same_v<typename traits::args_tuple, std::tuple<std::vector<Value>>>) {
+        // Passthrough shape: the function already has the registry's native
+        // signature (legacy bridges, parser-heavy services like stdnet).
+        // It handles its own validation and error mapping.
+        (void)method_name;
+        return DynamicMethodFn(Fn);
+    } else {
+        return [method_name = std::move(method_name)](const std::vector<Value>& args) -> Result<Value> {
+            if (args.size() != traits::arity) {
+                return Result<Value>::failure(
+                    StatusCode::InvalidArg,
+                    "Method '" + method_name + "' expects exactly " + std::to_string(traits::arity) +
+                    " argument(s), but " + std::to_string(args.size()) + " provided"
+                );
+            }
+            try {
+                return invoke_bound<Fn, R>(args, typename traits::arg_types{});
+            } catch (const DvargoshException& e) {
+                return Result<Value>::failure(e.code(), e.what());
+            } catch (const std::exception& e) {
+                return Result<Value>::failure(StatusCode::InvocationFailed, std::string("Binder: ") + e.what());
+            } catch (...) {
+                return Result<Value>::failure(StatusCode::InvocationFailed, "Binder: unknown error in '" + method_name + "'");
+            }
+        };
+    }
 }
 
 } // namespace bind_detail

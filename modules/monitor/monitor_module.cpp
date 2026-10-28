@@ -1,4 +1,5 @@
 #include "dvargosh/dvargosh.hpp"
+#include "dvargosh/telemetry.hpp"
 #include "monitor_interface.hpp"
 #include "../logger/logger_interface.hpp"
 #include <iostream>
@@ -11,8 +12,8 @@ namespace dvargosh {
 
 class MonitoringServiceImpl : public IMonitoringService {
 public:
-    explicit MonitoringServiceImpl(DomainManager* dm, TrackedAllocator* alloc)
-        : m_domain_mgr(dm), m_allocator(alloc) {}
+    explicit MonitoringServiceImpl(DomainManager* dm, TrackedAllocator* alloc, TelemetryHub* hub)
+        : m_domain_mgr(dm), m_allocator(alloc), m_hub(hub) {}
 
     void record_metric(const std::string& name, double value) override {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -88,10 +89,57 @@ public:
         std::cout << "└────────────────────────────────────────┴────────────────────┘\n";
     }
 
+    // --- TelemetryHub-backed views (displaying functions over live streams) ---
+
+    TelemetryHub* hub() const { return m_hub; }
+
+    std::string hub_snapshot_table(const std::string& glob) const {
+        if (!m_hub) return "TelemetryHub unavailable";
+        auto items = m_hub->snapshot(glob);
+        std::ostringstream ss;
+        ss << "\n┌────────────────────────────────────────────────────────────────────────┐\n";
+        ss << "│                    TELEMETRY HUB SNAPSHOT ('" << glob << "')\n";
+        ss << "├──────────────────────────────────────────┬──────────────┬──────────────┤\n";
+        ss << "│ Stream                                   │   Last/Avg   │  Count/Drop  │\n";
+        ss << "├──────────────────────────────────────────┼──────────────┼──────────────┤\n";
+        for (const auto& item : items) {
+            std::string name = item.name;
+            if (name.length() > 40) name = name.substr(0, 37) + "...";
+            ss << "│ " << name;
+            for (size_t i = name.length(); i < 41; ++i) ss << " ";
+            std::ostringstream vals;
+            vals << std::fixed << std::setprecision(3) << item.last << "/" << item.avg;
+            std::string v = vals.str();
+            if (v.length() > 12) v = v.substr(0, 12);
+            ss << " │ ";
+            for (size_t i = v.length(); i < 12; ++i) ss << " ";
+            ss << v;
+            std::string c = std::to_string(item.count) + "/" + std::to_string(item.dropped);
+            ss << " │ ";
+            for (size_t i = c.length(); i < 12; ++i) ss << " ";
+            ss << c << " │\n";
+        }
+        ss << "└──────────────────────────────────────────┴──────────────┴──────────────┘\n";
+        return ss.str();
+    }
+
+    std::string hub_top_table(size_t n) const {
+        if (!m_hub) return "TelemetryHub unavailable";
+        auto items = m_hub->top_streams(n);
+        std::ostringstream ss;
+        ss << "\n[TelemetryHub] Top " << items.size() << " stream(s) by last value:\n";
+        for (const auto& item : items) {
+            ss << "  * " << item.name << " = " << std::fixed << std::setprecision(3) << item.last
+               << " (count=" << item.count << ", max=" << item.max << ")\n";
+        }
+        return ss.str();
+    }
+
 private:
     mutable std::mutex m_mutex;
     DomainManager* m_domain_mgr = nullptr;
     TrackedAllocator* m_allocator = nullptr;
+    TelemetryHub* m_hub = nullptr;
     std::unordered_map<std::string, double> m_metrics;
 };
 
@@ -119,7 +167,10 @@ public:
     }
 
     Result<void> on_load(ModuleContext& ctx) override {
-        m_service = std::make_shared<MonitoringServiceImpl>(ctx.domain_manager(), ctx.allocator());
+        m_service = std::make_shared<MonitoringServiceImpl>(ctx.domain_manager(), ctx.allocator(), ctx.telemetry());
+
+        // Record a module-scoped metric through the hub-facing helper.
+        (void)ctx.record_metric("startup", 1.0);
 
         // 1. Inquire logger service
         auto logger_res = ctx.inject<ILogger>("logger");
@@ -205,6 +256,52 @@ public:
                 }
                 ss << "└──────────────────┴──────────────┴──────────────┴───────────────────────┘\n";
                 return Result<Value>::success(Value(ss.str()));
+            }
+        );
+
+        // --- TelemetryHub views (display functions over the native invoke streams) ---
+        // Hub snapshots expose per-method invoke counts/durations; SystemInfo-gated.
+        ctx.register_method("monitor.hub_snapshot", "Live TelemetryHub stream table (optional glob)",
+            [this](const std::vector<Value>& args) -> Result<Value> {
+                std::string glob = args.empty() ? "*" : args[0].to_string();
+                return Result<Value>::success(Value(m_service->hub_snapshot_table(glob)));
+            }
+        );
+
+        ctx.register_method("monitor.hub_top", "Top-N TelemetryHub streams by last value",
+            [this](const std::vector<Value>& args) -> Result<Value> {
+                size_t n = args.empty() ? 5 : static_cast<size_t>(args[0].as_int());
+                return Result<Value>::success(Value(m_service->hub_top_table(n)));
+            }
+        );
+
+        ctx.register_method("monitor.hub_dashboard", "Full hub dashboard + watches overview",
+            [this](const std::vector<Value>& /*args*/) -> Result<Value> {
+                auto* hub = m_service->hub();
+                if (!hub) return Result<Value>::failure(StatusCode::NullPointer, "TelemetryHub unavailable");
+                std::ostringstream ss;
+                ss << m_service->hub_snapshot_table("*");
+                ss << m_service->hub_top_table(10);
+                ss << "Active watchdog watches: " << hub->list_watches().size() << "\n";
+                return Result<Value>::success(Value(ss.str()));
+            }
+        );
+
+        ctx.register_method("monitor.hub_watch", "Register a watchdog: (stream_glob, op, threshold, action[, module])",
+            [this](const std::vector<Value>& args) -> Result<Value> {
+                auto* hub = m_service->hub();
+                if (!hub) return Result<Value>::failure(StatusCode::NullPointer, "TelemetryHub unavailable");
+                if (args.size() < 4) {
+                    return Result<Value>::failure(StatusCode::InvalidArg,
+                        "monitor.hub_watch requires (stream_glob, op, threshold, action[, module])");
+                }
+                std::string module = args.size() > 4 ? args[4].to_string() : "";
+                auto w_res = hub->watch(args[0].to_string(), args[1].to_string(),
+                                        args[2].as_double(), args[3].to_string(), module);
+                if (!w_res.is_ok()) {
+                    return Result<Value>::failure(w_res.status(), w_res.error_message());
+                }
+                return Result<Value>::success(Value(static_cast<int64_t>(w_res.value())));
             }
         );
 

@@ -20,6 +20,7 @@ namespace dvargosh {
 class DIContainer;
 class CommandMemory;
 class ServiceBinder;
+class TelemetryHub;
 
 // Injected Context provided to each loaded module
 class ModuleContext {
@@ -35,7 +36,8 @@ public:
         std::unique_ptr<SecuredMemorySpace> secured_memory,
         std::unique_ptr<TrackedAllocator> tracked_allocator,
         std::unique_ptr<ArenaAllocator> arena,
-        std::shared_ptr<ModuleCatalog> modules = nullptr
+        std::shared_ptr<ModuleCatalog> modules = nullptr,
+        TelemetryHub* telemetry = nullptr
     );
 
     ~ModuleContext();
@@ -68,6 +70,10 @@ public:
     ResourceManager* resources() noexcept { return m_resource_mgr.get(); }
     EventBus* event_bus() noexcept { return m_event_bus.get(); }
     DomainManager* domain_manager() noexcept { return m_domain_mgr.get(); }
+    TelemetryHub* telemetry() noexcept { return m_telemetry; }
+
+    // Telemetry scoped to this module's namespace ("mod.<module>.<name>").
+    Result<void> record_metric(const std::string& name, double value);
 
     // --- High-level Injected Operations ---
 
@@ -137,6 +143,7 @@ private:
     std::unique_ptr<SecuredMemorySpace> m_secured_memory;
     std::unique_ptr<TrackedAllocator> m_tracked_allocator;
     std::unique_ptr<ArenaAllocator> m_arena;
+    TelemetryHub* m_telemetry = nullptr;
 };
 
 // Global Dependency Injection Container
@@ -176,6 +183,7 @@ public:
     std::shared_ptr<ResourceManager> resource_manager() const { return m_resource_mgr; }
     std::shared_ptr<EventBus> event_bus() const { return m_event_bus; }
     std::shared_ptr<DomainManager> domain_manager() const { return m_domain_mgr; }
+    TelemetryHub* telemetry() const { return m_telemetry.get(); }
 
 private:
     mutable std::mutex m_mutex;
@@ -184,6 +192,7 @@ private:
     std::shared_ptr<ResourceManager> m_resource_mgr;
     std::shared_ptr<EventBus> m_event_bus;
     std::shared_ptr<DomainManager> m_domain_mgr;
+    std::unique_ptr<TelemetryHub> m_telemetry;
     std::unordered_map<std::type_index, std::shared_ptr<void>> m_instances;
 };
 

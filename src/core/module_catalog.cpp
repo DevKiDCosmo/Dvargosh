@@ -232,7 +232,22 @@ void register_standard_modules(ModuleCatalog& catalog) {
     stdtext_mod.secured_memory_size = 512 * 1024;
     catalog.register_module(stdtext_mod);
 
-    // 6. Demo Package (Subsystems: main, vault, worker, *)
+    // 6. Standard Library: stdnet (Networking) — URI, DNS/IP, TCP, UDP, HTTP
+    ModuleDescriptor stdnet_mod;
+    stdnet_mod.name = "stdnet";
+    stdnet_mod.filename = "libmod_stdnet";
+    stdnet_mod.domain = "std:net";
+    stdnet_mod.version = Version{1, 0, 0};
+    stdnet_mod.description = "Dvargosh Standard Library: networking (URI, DNS/IP resolution, TCP, UDP, HTTP packaging)";
+    stdnet_mod.permissions = PermissionSet({
+        Permission::ServiceRegister,
+        Permission::DynamicInvoke,
+        Permission::NetworkAccess
+    });
+    stdnet_mod.secured_memory_size = 1024 * 1024;
+    catalog.register_module(stdnet_mod);
+
+    // 7. Demo Package (Subsystems: main, vault, worker, *)
     ModuleDescriptor demo_mod;
     demo_mod.name = "demo_pkg";
     demo_mod.filename = "libmod_demo_pkg";
