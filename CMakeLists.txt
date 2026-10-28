@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 3.16)
 project(Dvargosh VERSION 1.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# OpenSSL (stdnet TLS wrapper; optional — stdnet degrades gracefully without it)
+find_package(OpenSSL QUIET)
+if(OPENSSL_FOUND)
+    message(STATUS "OpenSSL found: stdnet TLS enabled")
+    add_compile_definitions(DVARGOSH_HAVE_OPENSSL)
+endif()
 
 # Compiler Warnings & Flags
 if(MSVC)
@@ -81,6 +88,9 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # Find Threads and DL libraries
 find_package(Threads REQUIRED)
 set(EXTRA_LIBS ${CMAKE_DL_LIBS} Threads::Threads)
+if(OPENSSL_FOUND)
+    list(APPEND EXTRA_LIBS OpenSSL::SSL OpenSSL::Crypto)
+endif()
 
 # Include directories
 include_directories(include)
@@ -190,6 +200,8 @@ set(MODULE_TEST_SOURCES
     modules/monitor/test/test_monitor.cpp
     modules/stdtext/test/test_stdtext.cpp
     modules/stdnet/test/test_stdnet.cpp
+    modules/stdnet/test/test_stdnet_v2.cpp
+    development_modules/netprobe/test/test_netprobe.cpp
     modules/demo_pkg/test/test_demo_pkg.cpp
 )
 

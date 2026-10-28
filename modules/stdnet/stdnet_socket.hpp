@@ -26,6 +26,13 @@ public:
     void close();
     bool is_open() const { return m_fd >= 0; }
     int fd() const { return m_fd; }
+    // Gives up ownership of the fd (used by the TLS wrapper after handshake).
+    int release() {
+        int fd = m_fd;
+        m_fd = -1;
+        m_peer.clear();
+        return fd;
+    }
     const std::string& peer() const { return m_peer; }
 
 private:

@@ -1,0 +1,11 @@
+[module]
+name = netprobe
+version = 1.0.0
+description = Development module: connection testing probes (tcp/http/udp/dns ping) via stdnet
+author = Dvargosh Team
+secured_memory_kb = 512
+permissions = ServiceRegister, DynamicInvoke
+domains = dev:netprobe, *
+sources = netprobe_module.cpp
+link_libraries = dvargosh_core
+auto_load = true

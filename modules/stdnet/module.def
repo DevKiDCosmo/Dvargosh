@@ -6,6 +6,6 @@ author = Dvargosh Team
 secured_memory_kb = 1024
 permissions = ServiceRegister, DynamicInvoke, NetworkAccess
 domains = std:net, *
-sources = stdnet_module.cpp, stdnet.services.cpp, stdnet_service.cpp, stdnet_uri.cpp, stdnet_dns.cpp, stdnet_socket.cpp, stdnet_http.cpp
+sources = stdnet_module.cpp, stdnet.services.cpp, stdnet_service.cpp, stdnet_uri.cpp, stdnet_dns.cpp, stdnet_socket.cpp, stdnet_http.cpp, stdnet_reactor.cpp, stdnet_tls.cpp, stdnet_http_server.cpp
 link_libraries = dvargosh_core
 auto_load = true

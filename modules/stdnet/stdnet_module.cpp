@@ -5,6 +5,7 @@
 #include "dvargosh/dvargosh.hpp"
 #include "stdnet_service.hpp"
 #include "stdnet_services.hpp"
+#include <memory>
 
 namespace dvargosh {
 
@@ -38,7 +39,9 @@ public:
             );
         }
 
-        stdnet::set_instance(std::make_shared<stdnet::NetServiceImpl>(ctx.telemetry()));
+        auto svc = std::make_shared<stdnet::NetServiceImpl>(ctx.telemetry());
+        svc->set_event_bus(std::shared_ptr<EventBus>(ctx.event_bus(), [](EventBus*) {}));
+        stdnet::set_instance(svc);
         (void)ctx.record_metric("startup", 1.0);
 
         return ctx.binds()
@@ -47,6 +50,9 @@ public:
             // DNS / IP
             .fn<&stdnet_resolve>("stdnet.resolve", "Resolves host+service to IP list (uses TTL cache)")
             .fn<&stdnet_dns_stats>("stdnet.dns_stats", "DNS cache statistics")
+            .fn<&stdnet_resolve_reverse>("stdnet.resolve_reverse", "Reverse lookup: IP -> hostname")
+            .fn<&stdnet_resolve_async>("stdnet.resolve_async", "Async resolve; completes as net.dns.resolved event (host, service, tag)")
+            .fn<&stdnet_resolve_reverse_async>("stdnet.resolve_reverse_async", "Async reverse lookup; completes as net.dns.reverse_resolved event (ip, tag)")
             // TCP (connection table owned by this module)
             .fn<&stdnet_tcp_open>("stdnet.tcp_open", "Opens a TCP connection (uri, timeout_ms) -> conn_id")
             .fn<&stdnet_tcp_send>("stdnet.tcp_send", "Sends bytes on a connection (conn_id, data)")
@@ -59,6 +65,28 @@ public:
             .fn<&stdnet_http_request>("stdnet.http_request", "Raw HTTP/1.1 exchange (method, uri, headers, body, timeout_ms)")
             .fn<&stdnet_http_get>("stdnet.http_get", "HTTP GET, returns body (uri, timeout_ms)")
             .fn<&stdnet_http_post>("stdnet.http_post", "HTTP POST, returns body (uri, body, content_type, timeout_ms)")
+            .fn<&stdnet_https_get>("stdnet.https_get", "HTTPS GET via OpenSSL (uri, timeout_ms)")
+            .fn<&stdnet_tls_status>("stdnet.tls_status", "Reports TLS support state")
+            // HTTP server (loopback)
+            .fn<&stdnet_http_server_listen>("stdnet.http_server_listen", "Starts the built-in echo/JSON HTTP server (port, 0 = ephemeral)")
+            .fn<&stdnet_http_server_stop>("stdnet.http_server_stop", "Stops the built-in HTTP server")
+            // Async runtime
+            .fn<&stdnet_reactor_backend>("stdnet.reactor_backend", "Reports the reactor backend (kqueue/epoll)")
+            .fn<&stdnet_timer_after>("stdnet.timer_after", "Arms a steady timer on the reactor (ms)")
+            .fn<&stdnet_coro_delay_probe>("stdnet.coro_delay_probe", "Runs a C++20 coroutine probe: co_await timer + post (ms)")
+            // Unix domain sockets
+            .fn<&stdnet_uds_open>("stdnet.uds_open", "Connects to a unix socket (path) -> conn_id")
+            .fn<&stdnet_uds_send>("stdnet.uds_send", "Sends bytes over UDS (conn_id, data)")
+            .fn<&stdnet_uds_recv>("stdnet.uds_recv", "Receives bytes over UDS (conn_id, max_bytes, timeout_ms)")
+            .fn<&stdnet_uds_close>("stdnet.uds_close", "Closes a UDS connection (conn_id)")
+            // WebSockets
+            .fn<&stdnet_ws_connect>("stdnet.ws_connect", "WebSocket client handshake (ws:// uri, timeout_ms) -> conn_id")
+            .fn<&stdnet_ws_send>("stdnet.ws_send", "Sends a WS text frame (conn_id, text)")
+            .fn<&stdnet_ws_recv>("stdnet.ws_recv", "Receives next WS text/binary frame (conn_id, timeout_ms)")
+            .fn<&stdnet_ws_close>("stdnet.ws_close", "Closes a WebSocket (conn_id)")
+            // Flow control & hooks
+            .fn<&stdnet_rate_limit>("stdnet.rate_limit", "Configures per-connection bandwidth limiting (rate_kBps, burst_kb)")
+            .fn<&stdnet_hooks_enable>("stdnet.hooks_enable", "Installs byte/latency/error logging hooks")
             .result();
     }
 
