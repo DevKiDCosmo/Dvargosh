@@ -15,6 +15,7 @@
 #include "module_loader.hpp"
 #include "module_catalog.hpp"
 #include "auto_mapper.hpp"
+#include "binder.hpp"
 #include "logger.hpp"
 #include "runtime.hpp"
 #include "execution_context.hpp"

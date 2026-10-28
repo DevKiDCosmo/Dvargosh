@@ -8,6 +8,18 @@
 namespace dvargosh {
 
 /* ========================================================================= */
+/* Reserved domain names                                                     */
+/* ========================================================================= */
+
+bool is_reserved_domain_name(const std::string& name) {
+    // "system" is the universal-privilege domain: every privileged code path
+    // (Registry::invoke, Vault::check_caller_access, Runtime::get_context,
+    // ExecutionContext::verify_not_tampered) short-circuits on it.
+    // A module declaring domain "system" would inherit all of it (audit C1).
+    return name == "system";
+}
+
+/* ========================================================================= */
 /* Domain                                                                    */
 /* ========================================================================= */
 
@@ -49,11 +61,11 @@ bool Domain::can_access_domain(const std::string& target_domain) const {
     if (target_domain.empty()) return false;
     if (is_domain_blacklisted(target_domain)) return false;
     if (target_domain == m_name) return true;
+    // NOTE (audit C4): a wildcard TARGET must never grant access by itself.
+    // "X.*" / "*" targets are only reachable if this domain holds an explicit
+    // allow entry for them (or for "*"), or via the same-domain rule above.
     if (m_allowed_targets.find("*") != m_allowed_targets.end()) return true;
     if (m_allowed_targets.find(target_domain) != m_allowed_targets.end()) return true;
-    if (target_domain == "*" || (target_domain.size() >= 2 && target_domain.substr(target_domain.size() - 2) == ".*")) {
-        return true;
-    }
     return false;
 }
 
@@ -192,7 +204,10 @@ bool DomainManager::check_cross_domain_access(const std::string& from_domain, co
     if (from_domain.empty() || to_domain.empty()) return false;
     if (from_domain == "system") return true;
     if (from_domain == to_domain) return true;
-    if (to_domain == "*" || (to_domain.size() >= 2 && to_domain.substr(to_domain.size() - 2) == ".*")) return true;
+    // NOTE (audit C4): no wildcard-target shortcut. Previously any target ending
+    // in ".*" (the default scope of every auto-registered method!) was callable
+    // from any domain, voiding cross-domain isolation. Access now requires an
+    // explicit allow entry from the caller's domain, or the caller being "system".
     if (is_cross_domain_blacklisted(from_domain, to_domain)) return false;
 
     std::lock_guard<std::mutex> lock(m_mutex);

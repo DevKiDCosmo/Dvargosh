@@ -36,17 +36,17 @@ public:
     bool exist_domain(const std::string_view& module) const;
     
     // Batch operations - plug and play easily
+    // Audit C2: the catalog never signs binaries; verification relies on the
+    // loader's pre-loaded signatures.json entries (or unsigned dev mode).
     Result<size_t> load_all(
         ModuleLoader& loader,
-        const std::string& modules_dir,
-        const std::string& signing_key = ""
+        const std::string& modules_dir
     );
 
     Result<size_t> load_domain(
         const std::string& domain,
         ModuleLoader& loader,
-        const std::string& modules_dir,
-        const std::string& signing_key = ""
+        const std::string& modules_dir
     );
 
     Result<size_t> unload_domain(const std::string& domain, ModuleLoader& loader);

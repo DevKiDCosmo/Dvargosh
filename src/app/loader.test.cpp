@@ -1,7 +1,6 @@
 #include "dvargosh/dvargosh.hpp"
+#include "dvargosh/demo_signing.hpp"
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <cassert>
 #include <random>
@@ -23,43 +22,22 @@ static std::string resolve_test_signing_key() {
     return ss.str();
 }
 
-// Provision signatures.json for the discovery gate: with signature enforcement on,
-// discover_all_modules() rejects unsigned binaries, so the test signs every module
-// binary it can see in its search paths with its own ephemeral key.
-static void provision_test_signatures(const ModuleLoader& loader, const std::string& key) {
-    for (const auto& dir : loader.search_paths()) {
-        std::error_code ec;
-        if (!std::filesystem::is_directory(dir, ec)) continue;
-
-        std::ostringstream json;
-        json << "{";
-        bool first = true;
-        for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
-            const auto& p = entry.path();
-            std::string ext = p.extension().string();
-            if (ext != ".dylib" && ext != ".so") continue;
-            auto sig = Crypto::sign_file(key, p.string());
-            if (!sig.is_ok()) continue;
-            if (!first) json << ",";
-            json << "\"" << p.filename().string() << "\": {\"hmac_sha256\": \"" << sig.value() << "\"}";
-            first = false;
-        }
-        json << "}";
-
-        const auto out = std::filesystem::path(dir) / "signatures.json";
-        std::ofstream(out.string()) << json.str();
-        std::cout << "  [setup] Provisioned " << out.string() << " (" << (first ? 0 : 1) << "+ entries)\n";
-        return; // one trust anchor is enough; discovery pre-loads from all search paths
-    }
-    std::cerr << "  [setup][WARN] No writable search path for signatures.json\n";
-}
-
 int main() {
     std::cout << "[dvargosh] Standalone App Test: Loader & Auto-Registration\n";
 
     ScopedCallFrame host_frame("host_loader_test", "system");
     auto di = std::make_shared<DIContainer>();
     const std::string secret_key = resolve_test_signing_key();
+
+    // Audit C4: cross-domain access now requires explicit host-declared edges.
+    // These mirror the trust this test intentionally exercises between modules.
+    auto dm = di->domain_manager();
+    dm->allow_cross_domain("worker", "compute");
+    dm->allow_cross_domain("worker", "core");
+    dm->allow_cross_domain("worker", "accelerator:cipher");
+    dm->allow_cross_domain("worker", "accelerator:hash");
+    dm->allow_cross_domain("captives:hello_world", "demo_pkg:vault");
+    dm->allow_cross_domain("captives:hello_world", "demo_pkg:worker");
 
     ModuleLoaderConfig cfg;
     cfg.enforce_signatures = true;
@@ -76,7 +54,7 @@ int main() {
     // 0. Provision the trust anchor for this test run: with enforcement on, discovery
     //    rejects unsigned binaries, so sign everything in the search paths first.
     std::cout << "[Step 0] Provisioning signatures.json with the ephemeral test key...\n";
-    provision_test_signatures(loader, secret_key);
+    provision_signatures_for_demo(loader, secret_key, "  [test]");
 
     // 1. Run Universal Recognition & Auto-Discovery
     std::cout << "[Step 1] Running Auto-Discovery & Header Symbol Recognition...\n";

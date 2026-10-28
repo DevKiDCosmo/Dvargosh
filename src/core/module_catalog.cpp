@@ -221,7 +221,18 @@ void register_standard_modules(ModuleCatalog& catalog) {
     monitor_mod.secured_memory_size = 2 * 1024 * 1024;
     catalog.register_module(monitor_mod);
 
-    // 5. Demo Package (Subsystems: main, vault, worker, *)
+    // 5. Standard Library: stdtext (Text Services) — first binder-native module
+    ModuleDescriptor stdtext_mod;
+    stdtext_mod.name = "stdtext";
+    stdtext_mod.filename = "libmod_stdtext";
+    stdtext_mod.domain = "std:text";
+    stdtext_mod.version = Version{1, 0, 0};
+    stdtext_mod.description = "Dvargosh Standard Library: text manipulation services (trim, case, replace, pad, search)";
+    stdtext_mod.permissions = PermissionSet::standard_module();
+    stdtext_mod.secured_memory_size = 512 * 1024;
+    catalog.register_module(stdtext_mod);
+
+    // 6. Demo Package (Subsystems: main, vault, worker, *)
     ModuleDescriptor demo_mod;
     demo_mod.name = "demo_pkg";
     demo_mod.filename = "libmod_demo_pkg";

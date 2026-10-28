@@ -1,6 +1,7 @@
 #include "dvargosh/module_loader.hpp"
 #include "dvargosh/module_header.hpp"
 #include "dvargosh/runtime.hpp"
+#include "dvargosh/logger.hpp"
 #include <dlfcn.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -310,6 +311,11 @@ Result<void> ModuleLoader::load_from_file(
         if (!valid) {
             return Result<void>::failure(StatusCode::SignatureInvalid, "Cryptographic signature verification failed for module " + filepath);
         }
+        log_info("Module '", filepath, "' signature verified");
+    } else {
+        // Unsigned dev mode: every dynamic load is visible in the log so nobody
+        // mistakes an unverified binary for a verified one.
+        log_warn("Module '", filepath, "' loaded WITHOUT signature verification (unsigned development mode)");
     }
 
     // 2. Dynamic Library Load

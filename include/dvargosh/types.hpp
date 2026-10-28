@@ -249,9 +249,18 @@ public:
         if (is_bool()) return std::get<bool>(m_var) ? 1.0 : 0.0;
         type_error("as_double");
     }
-    const std::string& as_string() const { return std::get<std::string>(m_var); }
-    void* as_ptr() const { return std::get<void*>(m_var); }
-    const std::vector<uint8_t>& as_bytes() const { return std::get<std::vector<uint8_t>>(m_var); }
+    const std::string& as_string() const {
+        if (!is_string()) type_error("as_string");
+        return std::get<std::string>(m_var);
+    }
+    void* as_ptr() const {
+        if (!is_ptr()) type_error("as_ptr");
+        return std::get<void*>(m_var);
+    }
+    const std::vector<uint8_t>& as_bytes() const {
+        if (!is_bytes()) type_error("as_bytes");
+        return std::get<std::vector<uint8_t>>(m_var);
+    }
 
     std::string to_string() const {
         if (is_nil()) return "nil";

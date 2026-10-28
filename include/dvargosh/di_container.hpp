@@ -19,6 +19,7 @@ namespace dvargosh {
 
 class DIContainer;
 class CommandMemory;
+class ServiceBinder;
 
 // Injected Context provided to each loaded module
 class ModuleContext {
@@ -82,6 +83,10 @@ public:
         if (!m_registry) return Result<Value>::failure(StatusCode::NullPointer, "Registry is null");
         return m_registry->invoke(method_name, args, m_module_name, m_domain_name, &m_policy);
     }
+
+    // Ergonomic typed method registration (defined in dvargosh/binder.hpp):
+    // ctx.binds().fn<&my_function>("name", "description");
+    ServiceBinder binds();
 
     Result<Value> requireModule(const std::string& module_name);
 

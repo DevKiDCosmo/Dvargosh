@@ -177,6 +177,8 @@ set(CORE_TEST_SOURCES
     tests/test_violations.cpp
     tests/test_domains.cpp
     tests/test_isolation_and_secure_memory.cpp
+    tests/test_security_hardening.cpp
+    tests/test_binder.cpp
 )
 
 set(MODULE_TEST_SOURCES
@@ -184,6 +186,7 @@ set(MODULE_TEST_SOURCES
     modules/math/test/test_math.cpp
     modules/worker/test/test_worker.cpp
     modules/monitor/test/test_monitor.cpp
+    modules/stdtext/test/test_stdtext.cpp
     modules/demo_pkg/test/test_demo_pkg.cpp
 )
 

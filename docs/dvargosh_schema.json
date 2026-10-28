@@ -137,6 +137,22 @@
       "services": []
     },
     {
+      "name": "stdtext",
+      "folder_name": "stdtext",
+      "version": "1.0.0",
+      "description": "Dvargosh Standard Library: text manipulation services",
+      "author": "Dvargosh Team",
+      "secured_memory_kb": 512,
+      "domains": [
+        "*"
+      ],
+      "sources": [
+        "stdtext.services.cpp",
+        "stdtext_module.cpp"
+      ],
+      "services": []
+    },
+    {
       "name": "worker",
       "folder_name": "worker",
       "version": "1.0.0",

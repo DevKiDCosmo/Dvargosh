@@ -52,8 +52,9 @@ TEST_CASE(test_module_lifecycle_and_scoped_cleanup) {
     ASSERT_TRUE(loader.is_loaded("mock_mod"));
     ASSERT_FALSE(g_custom_resource_destroyed);
 
-    // Call method
-    auto ping_res = di->registry()->invoke("mock.ping");
+    // Call method — audit C4/C5: host callers declare their identity explicitly;
+    // an empty caller domain resolves to "untrusted" and is denied by default.
+    auto ping_res = di->registry()->invoke("mock.ping", {}, "host_test", "system");
     ASSERT_TRUE(ping_res.is_ok());
     ASSERT_EQ(ping_res.value().to_string(), "pong");
 
@@ -66,7 +67,7 @@ TEST_CASE(test_module_lifecycle_and_scoped_cleanup) {
     ASSERT_TRUE(g_custom_resource_destroyed);
 
     // Verify registered method was cleaned up
-    auto post_res = di->registry()->invoke("mock.ping");
+    auto post_res = di->registry()->invoke("mock.ping", {}, "host_test", "system");
     ASSERT_FALSE(post_res.is_ok());
     ASSERT_EQ(post_res.status(), StatusCode::SymbolNotFound);
 }

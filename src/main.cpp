@@ -1,4 +1,5 @@
 #include "dvargosh/dvargosh.hpp"
+#include "dvargosh/demo_signing.hpp"
 #include "../modules/logger/logger_interface.hpp"
 #include "../modules/math/math_interface.hpp"
 #include "../modules/monitor/monitor_interface.hpp"
@@ -64,10 +65,14 @@ void run_automated_demonstration(const std::string& module_dir, const std::strin
     dm->create_domain("untrusted_guest", SecurityPolicy::strict());
 
     // Configure Domain-to-Domain Communication Policies
+    // Audit C4: wildcard targets no longer auto-grant access — every edge a module
+    // relies on must be declared explicitly here (host-defined trust matrix).
     dm->allow_cross_domain("compute", "core");      // compute can call core (logger)
     dm->allow_cross_domain("worker", "compute");    // worker can call compute (math)
     dm->allow_cross_domain("worker", "core");       // worker can call core (logger)
-    dm->allow_cross_domain("telemetry", "*");       // telemetry can observe all domains
+    dm->allow_cross_domain("worker", "accelerator:cipher"); // worker.box_invoke cross-calls crypto_accelerator
+    dm->allow_cross_domain("worker", "accelerator:hash");
+    dm->allow_cross_domain("telemetry", "*");       // telemetry can observe all domains (explicit allow-to-all)
     // Notice: untrusted_guest is NOT allowed to call core or compute!
 
     // 2. Initialize Dedicated Domain Secured Memory Space
@@ -101,12 +106,18 @@ void run_automated_demonstration(const std::string& module_dir, const std::strin
 
     ModuleLoader loader(di, loader_cfg);
 
-    auto load_count_res = catalog.load_all(loader, module_dir, secret_key);
+    // Audit C2: the demo harness (not the loader) provisions the trust anchor when
+    // a key is present; with no key the run stays in unsigned dev mode.
+    if (loader_cfg.enforce_signatures) {
+        provision_signatures_for_demo(loader, secret_key, "  [demo]");
+    }
+
+    auto load_count_res = catalog.load_all(loader, module_dir);
     if (!load_count_res.is_ok()) {
         std::cerr << "  " << ANSI_RED << "✗ Load failed: " << load_count_res.error_message() << ANSI_RESET << "\n";
         return;
     }
-    std::cout << "  " << ANSI_GREEN << "✓" << ANSI_RESET << " Successfully verified, signed, and loaded "
+    std::cout << "  " << ANSI_GREEN << "✓" << ANSI_RESET << " Successfully verified and loaded "
               << load_count_res.value() << " plug-and-play dynamic modules.\n";
 
     // Show domain status report
@@ -180,7 +191,7 @@ void run_automated_demonstration(const std::string& module_dir, const std::strin
     std::cout << "     Is 'math' loaded? " << (loader.is_loaded("math") ? "YES" : "NO (Cleanly unmounted)") << "\n";
 
     std::cout << "  -> Re-plugging domain [compute]...\n";
-    auto replug_res = catalog.load_domain("compute", loader, module_dir, secret_key);
+    auto replug_res = catalog.load_domain("compute", loader, module_dir);
     std::cout << "     " << ANSI_GREEN << "✓" << ANSI_RESET << " Re-plugged " << replug_res.value() << " module(s) into [compute].\n";
     std::cout << "     Is 'math' loaded? " << (loader.is_loaded("math") ? "YES (Fully restored & active)" : "NO") << "\n";
 
@@ -290,15 +301,9 @@ int main(int argc, char** argv) {
                 continue;
             }
 
-            // Auto-sign if secret_key is provided and sig is empty
-            if (sig.empty() && !secret_key.empty()) {
-                auto file_res = loader.find_module_file(target);
-                if (file_res.is_ok()) {
-                    auto s_res = Crypto::sign_file(secret_key, file_res.value());
-                    if (s_res.is_ok()) sig = s_res.value();
-                }
-            }
-
+            // Audit C2: the CLI never signs. With enforcement on, verification uses
+            // signatures.json (provision out-of-band via `make sign-modules`); with
+            // an explicit signature argument the provided value is verified.
             auto res = loader.load(target, sig);
             if (res.is_ok()) {
                 std::cout << "Loaded module '" << target << "'.\n";
@@ -321,18 +326,18 @@ int main(int argc, char** argv) {
                 else std::cerr << "Failed: " << res.error_message() << "\n";
             }
         } else if (cmd == "load_all" || cmd == "ll") {
-            auto disc_res = loader.auto_load_all(secret_key);
-            auto cat_res = catalog.load_all(loader, module_dir, secret_key);
+            auto disc_res = loader.auto_load_all();
+            auto cat_res = catalog.load_all(loader, module_dir);
             size_t total = (disc_res.is_ok() ? disc_res.value() : 0);
             std::cout << "Loaded " << total << " modules.\n";
         } else if (cmd == "load_domain") {
             std::string dom;
             iss >> dom;
-            auto res = loader.auto_load_domain(dom, secret_key);
+            auto res = loader.auto_load_domain(dom);
             if (res.is_ok()) {
                 std::cout << "Loaded domain '" << dom << "'.\n";
             } else {
-                auto res2 = catalog.load_domain(dom, loader, module_dir, secret_key);
+                auto res2 = catalog.load_domain(dom, loader, module_dir);
                 if (res2.is_ok()) std::cout << "Loaded " << res2.value() << " modules in domain '" << dom << "'.\n";
                 else std::cerr << "Failed: " << res.error_message() << "\n";
             }
